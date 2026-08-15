@@ -1,0 +1,23 @@
+# dsh-biomni bundle patch
+#
+# This file is the `dsh.bundle.patch` layer of the published npm package: when
+# the plugin is installed through the official CLI —
+#
+#   dsh plugin --profile <name> add dsh-biomni@<version>
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages
+# and, seeing this declaration, appends `dsh-biomni` to the bundle stack. The
+# profile boot then merges THIS patch (a single `insert` of the plugin row).
+# No profile file edits needed — one command installs and mounts.
+#
+# `python` is the interpreter every session worker is spawned from. The default
+# `python3` is almost certainly NOT the one you want: Biomni's library needs
+# Python 3.11+ and ~1 GB of dependencies (python/requirements-biomni.txt).
+# Point it at that venv here, or later in the Settings page — the setting
+# layers over this row and applies without a restart.
+- insert:
+    - id: biomni
+      name: 'dsh-biomni'
+      config:
+        python: python3
+        timeoutMs: 600000
