@@ -52,11 +52,11 @@ if [ -n "$PYTHON" ]; then
 EOF
 fi
 
-cat <<'EOF'
+cat <<EOF
 
 Done. Start the harness with:
 
-    dsh --profile PROFILE_NAME
+    dsh --profile $PROFILE
 
 Then run /biomni in a conversation, or open Settings -> Biomni, to see what
 the configured interpreter can actually do.

@@ -6,9 +6,7 @@
 
 不 fork harness，不改 harness 源码。它是一个普通的 out-of-tree bundle，通过 profile 组合进去。
 
-```sh
-dsh plugin --profile web add dsh-biomni
-```
+> **尚未发布到 npm。** 现在装它请看[安装](#安装)一节 —— 从源码打包装是最顺的一条路。
 
 ---
 
@@ -104,18 +102,41 @@ python3.11 -m venv .venv
 
 ### 2. 装插件
 
+包**还没发布到 npm**，所以下面两条路二选一。两条都在真实 dsh 0.1.0-rc.6 上验证过。
+
+#### A. 从源码打包装（推荐）
+
+```sh
+git clone https://github.com/ZhuYanTech/dsh-biomni && cd dsh-biomni
+bash scripts/install.sh web
+```
+
+脚本做的事：`pnpm install && pnpm build && pnpm pack`，然后
+`dsh plugin --profile web add file:<tarball>`。tarball 里 `lib/` 是**预构建好的**，所以 pnpm 不需要跑构建脚本 —— 这条路没有下面那个 `allowBuilds` 的麻烦，实测 305ms 装完。
+
+#### B. 直接从 GitHub 装
+
+```sh
+dsh plugin --profile web add "github:ZhuYanTech/dsh-biomni"
+```
+
+**第一次一定会失败**，这是预期内的：git 依赖要靠 `prepare` 脚本现场构建，而 pnpm 11 默认拦截依赖的构建脚本。它会打印出需要的确切 key，dsh 也会跟一句提示。把那个 key 加进 **profile 自己的** `pnpm-workspace.yaml`：
+
+```yaml
+# $DSH_HOME/profiles/web/pnpm-workspace.yaml
+allowBuilds:
+  "dsh-biomni@https://codeload.github.com/ZhuYanTech/dsh-biomni/tar.gz/<commit-sha>": true
+```
+
+然后重跑那条命令。注意这个 key **带 commit SHA**，仓库每推一次就得换一次 —— 这也是推荐 A 的原因。
+
+#### C. 发布之后
+
 ```sh
 dsh plugin --profile web add dsh-biomni
 ```
 
 CLI 会读取本包的 `dsh.bundle.patch` 声明，把 `dsh-biomni` 追加进 `dsh.profile.bundles`，不需要手改 profile 文件。
-
-从源码装：
-
-```sh
-pnpm install && pnpm build
-scripts/install.sh web /abs/path/to/.venv/bin/python
-```
 
 ### 3. 指向那个解释器
 
@@ -239,8 +260,8 @@ worker 的 argv 会被 `ctx.sandbox` 按 `ctx.sandboxPolicy` 的策略包裹，�
 **preset 挂不了这个插件，这是硬约束。** preset 行里的裸包名从 **harness 安装目录**解析，不是 profile 的 node_modules（见 `@deepseek-ai/dsh-agent-presets` 的 `PresetTree.import`）；相对路径也不行，因为 preset 目录下没有 node_modules 能解析本插件的依赖。所以能力必须走 bundle，preset 只能承载框架。
 
 ```sh
-dsh plugin --profile web add dsh-biomni    # 能力
-bash scripts/install-preset.sh             # 框架（生成到 $DSH_HOME/.agent-presets/biomni）
+bash scripts/install.sh web        # 能力（未发布前的装法，见上）
+bash scripts/install-preset.sh     # 框架（生成到 $DSH_HOME/.agent-presets/biomni）
 ```
 
 装了 preset 之后，**把 profile 那行的提示词分区关掉**，否则同一段话会同时挂在每个 agent 上：

@@ -23,7 +23,8 @@
 #
 # The division is therefore:
 #   * the profile bundle carries the capability — run_python, the settings page,
-#     the skill catalog (`dsh plugin --profile web add dsh-biomni`);
+#     the skill catalog (`bash scripts/install.sh web`, or `dsh plugin add
+#     dsh-biomni` once published);
 #   * this preset carries the FRAMING, scoped per agent.
 #
 # Because the framing moves here, set `guidance: ''` on the plugin's profile row
@@ -122,6 +123,7 @@ echo "==> installed to $TARGET"
 echo
 echo "Next:"
 echo "  1. Install the capability as a profile bundle, if you have not:"
+echo "       bash scripts/install.sh web      # or, once published:"
 echo "       dsh plugin --profile web add dsh-biomni"
 echo "  2. Silence the profile-wide prompt section, so the framing lives only in"
 echo "     this preset — in \$DSH_HOME/profiles/web/cordis.patch.yml:"

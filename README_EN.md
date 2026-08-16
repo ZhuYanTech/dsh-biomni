@@ -6,9 +6,7 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin: a 
 
 No fork of the harness, and nothing patches its core. It is an ordinary out-of-tree bundle composed into a profile.
 
-```sh
-dsh plugin --profile web add dsh-biomni
-```
+> **Not published to npm yet.** See [Install](#install) for what works today — packing from source is the smoothest path.
 
 ---
 
@@ -96,18 +94,41 @@ python3.11 -m venv .venv
 
 ### 2. Install the plugin
 
+The package is **not on npm yet**, so pick one of the first two. Both are verified against a real dsh 0.1.0-rc.6.
+
+#### A. Pack from source (recommended)
+
+```sh
+git clone https://github.com/ZhuYanTech/dsh-biomni && cd dsh-biomni
+bash scripts/install.sh web
+```
+
+The script runs `pnpm install && pnpm build && pnpm pack`, then
+`dsh plugin --profile web add file:<tarball>`. The tarball carries a **prebuilt** `lib/`, so pnpm never needs to run a build script — this path avoids the `allowBuilds` dance below entirely, and installs in about 300 ms.
+
+#### B. Straight from GitHub
+
+```sh
+dsh plugin --profile web add "github:ZhuYanTech/dsh-biomni"
+```
+
+**The first run will fail, by design**: a git dependency builds through its `prepare` script, and pnpm 11 blocks dependency build scripts until they are allowed. It prints the exact key needed, and dsh adds a line pointing at the fix. Put that key in the **profile's own** `pnpm-workspace.yaml`:
+
+```yaml
+# $DSH_HOME/profiles/web/pnpm-workspace.yaml
+allowBuilds:
+  "dsh-biomni@https://codeload.github.com/ZhuYanTech/dsh-biomni/tar.gz/<commit-sha>": true
+```
+
+Then re-run the command. Note the key contains the **commit SHA**, so it changes on every push to the repository — which is why A is the recommendation.
+
+#### C. Once published
+
 ```sh
 dsh plugin --profile web add dsh-biomni
 ```
 
 The CLI reads this package's `dsh.bundle.patch` declaration and appends `dsh-biomni` to `dsh.profile.bundles` — no profile file edits.
-
-From source:
-
-```sh
-pnpm install && pnpm build
-scripts/install.sh web /abs/path/to/.venv/bin/python
-```
 
 ### 3. Point it at that interpreter
 
