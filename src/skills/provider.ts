@@ -31,6 +31,7 @@ import {
   type SkillCatalog,
 } from './catalog.ts'
 import { describeModule, renderSkillBody } from './render.ts'
+import { loadStaticSkills, type StaticSkill } from './static.ts'
 
 /** The provider name in the `ctx.skills` registry. */
 export const PROVIDER_NAME = 'dsh-biomni'
@@ -44,10 +45,28 @@ export interface ProviderDeps {
   onError?: (error: unknown) => void
 }
 
-/** A module resolved for one candidate, carried as the opaque locator. */
-interface Locator {
-  module: CatalogModule
-  biomni: string
+/**
+ * What a candidate carries back to `get()`. Either a generated module skill or
+ * one of the shipped markdown ones — the registry only stores the locator and
+ * hands it back, so the two kinds never need a shared shape.
+ */
+type Locator =
+  | { kind: 'module'; module: CatalogModule; biomni: string }
+  | { kind: 'static'; skill: StaticSkill }
+
+/** One shipped markdown skill as a candidate. */
+function staticCandidate(skill: StaticSkill): SkillCandidate {
+  return {
+    name: skill.name,
+    description: skill.description,
+    ...(skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse }),
+    invocation: { modelInvocable: true, userInvocable: true },
+    provider: PROVIDER_NAME,
+    source: 'bundled',
+    rank: BUNDLED_SKILL_RANK,
+    path: skill.path,
+    locator: { kind: 'static', skill } satisfies Locator,
+  }
 }
 
 /**
@@ -87,6 +106,12 @@ export function createBiomniSkillProvider(
     name: PROVIDER_NAME,
 
     async list(options) {
+      // The shipped skills do not depend on the interpreter: how to organize
+      // the work and how to use run_python without losing results are useful
+      // whether or not Biomni is installed. They are offered unconditionally,
+      // and survive a failed catalog build.
+      const shipped = loadStaticSkills().map(staticCandidate)
+
       // A failed build must not take the whole registry's discovery down: other
       // providers' skills stay usable, and `complete: false` tells the registry
       // not to cache this observation so the next lookup retries.
@@ -95,18 +120,18 @@ export function createBiomniSkillProvider(
         catalog = await catalogFor(options.signal ?? control.signal)
       } catch (error) {
         deps.onError?.(error)
-        return { candidates: [], complete: false }
+        return { candidates: shipped, complete: false }
       }
       if (catalog.error !== undefined) {
         deps.onError?.(new Error(catalog.error))
-        return { candidates: [], complete: false }
+        return { candidates: shipped, complete: false }
       }
       // No biomni is an authoritative answer, not a failure: this interpreter
-      // genuinely has no Biomni skills to offer.
+      // genuinely has no Biomni modules to offer.
       const biomni = catalog.biomni
-      if (biomni === null) return []
+      if (biomni === null) return shipped
 
-      return advertisableModules(catalog).map((module): SkillCandidate => ({
+      const generated = advertisableModules(catalog).map((module): SkillCandidate => ({
         name: skillNameOf(module.name),
         description: describeModule(module),
         invocation: { modelInvocable: true, userInvocable: true },
@@ -117,26 +142,36 @@ export function createBiomniSkillProvider(
           kind: 'opaque',
           description: `the biomni.tool.${module.name} module inside this session's Python interpreter`,
         },
-        locator: { module, biomni } satisfies Locator,
+        locator: { kind: 'module', module, biomni } satisfies Locator,
         metadata: {
           module: module.name,
           biomni,
           functions: module.functions.length,
         },
       }))
+
+      return [...shipped, ...generated]
     },
 
     async get(candidate) {
       const locator = candidate.locator as Locator | undefined
       if (locator === undefined) return undefined
-      return {
+      const common = {
         name: candidate.name,
         description: candidate.description,
         invocation: candidate.invocation,
         provider: PROVIDER_NAME,
         source: candidate.source,
+        ...(candidate.whenToUse === undefined ? {} : { whenToUse: candidate.whenToUse }),
+        ...(candidate.path === undefined ? {} : { path: candidate.path }),
         ...(candidate.resourceBase === undefined ? {} : { resourceBase: candidate.resourceBase }),
         ...(candidate.metadata === undefined ? {} : { metadata: candidate.metadata }),
+      }
+      if (locator.kind === 'static') {
+        return { ...common, content: locator.skill.content } satisfies SkillDefinition
+      }
+      return {
+        ...common,
         content: renderSkillBody(locator.module, locator.biomni),
       } satisfies SkillDefinition
     },

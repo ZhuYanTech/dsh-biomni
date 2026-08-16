@@ -1,0 +1,3 @@
+name: 生物医学模式
+description: 面向生物医学研究的 Agent：持久 Python 解释器 + Biomni 工具库，模块签名按需加载，环境限制如实上报。基于标准模式，仅替换人格。
+order: 5

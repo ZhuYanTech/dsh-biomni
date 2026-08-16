@@ -22,7 +22,7 @@ dsh plugin --profile web add dsh-biomni
 |---|---|---|
 | 系统提示词分区 | 声明解释器的存在和模块清单 | 只注册工具不够——实测模型会直接去用 bash |
 | `bash` 守卫 | 拒绝 shell 里直接调用 `python` / `pip` | 提示词只能纠正**第一次**选择，任务中途模型仍会回退 |
-| **skill 目录** | 每个工具模块一个 skill，带真实签名 | 218 个函数的 schema 塞不进上下文——这是 Biomni 用 `ToolRetriever` 解决的问题 |
+| **skill 目录** | 每个工具模块一个 skill，带真实签名；外加一个手写的 `biomni-workflow` | 218 个函数的 schema 塞不进上下文——这是 Biomni 用 `ToolRetriever` 解决的问题 |
 | 环境探针 | `/biomni` 命令 + 设置页 | 「模块能 import」和「函数能调用」是两个不同的数字 |
 
 ---
@@ -75,7 +75,15 @@ skill 目录和设置页报告共用同一份两道门分析（`python/_gates.py
 - 门 2 挡住的函数**不进「可用」列表，但会在 body 末尾被点名**，连同它缺哪个包，并附一句「报告缺失的包，不要自己装，更不要重新实现」。完全藏起来反而更糟：模型会靠「调用 → 失败」重新发现这个坑，而实测的失败反应不是干净地报错，是默默手搓一个替代品。
 - `python` 设置一改，目录立刻 invalidate。从另一个解释器生成的目录不是「陈旧」，是**错的**。
 
-没装 Biomni 时就是没有 skill —— 这是一个确定的答案，不是失败。
+没装 Biomni 时就没有模块 skill —— 这是一个确定的答案，不是失败。
+
+### 还有一个手写的：`biomni-workflow`
+
+生成式 skill 回答「有哪些函数、怎么调」，回答不了「这活该怎么组织」—— 那类知识不在 Biomni 的元数据里。`skills/biomni-workflow/SKILL.md` 补这一块，内容出自 Biomni 自己的 agent 协议加上本项目实测到的失败，其中最要紧的一条是：
+
+> **把想看的东西 print 出来。** `run_python` 返回 stdout、stderr，以及末尾裸表达式的 `repr`。**一段以赋值结尾的代码什么都不返回** —— 调用成功了、值也绑定了，但你看不见。Biomni 自己的提示词把这条写成硬性要求。
+
+它随包发布，和生成的那些走同一个 provider，所以不需要额外的安装步骤，两条通道都覆盖。没装 Biomni 时它照样在。
 
 ---
 
@@ -219,6 +227,35 @@ worker 的 argv 会被 `ctx.sandbox` 按 `ctx.sandboxPolicy` 的策略包裹，�
 
 ---
 
+## Bundle 还是 preset
+
+两种形态**职责不同，不是二选一**：
+
+| | 承载什么 | 作用域 |
+|---|---|---|
+| **profile bundle** | 能力：`run_python`、设置页、skill 目录 | 整个 profile |
+| **agent preset**（生物医学模式）| 框架：生物医学人格 | 单个 agent |
+
+**preset 挂不了这个插件，这是硬约束。** preset 行里的裸包名从 **harness 安装目录**解析，不是 profile 的 node_modules（见 `@deepseek-ai/dsh-agent-presets` 的 `PresetTree.import`）；相对路径也不行，因为 preset 目录下没有 node_modules 能解析本插件的依赖。所以能力必须走 bundle，preset 只能承载框架。
+
+```sh
+dsh plugin --profile web add dsh-biomni    # 能力
+bash scripts/install-preset.sh             # 框架（生成到 $DSH_HOME/.agent-presets/biomni）
+```
+
+装了 preset 之后，**把 profile 那行的提示词分区关掉**，否则同一段话会同时挂在每个 agent 上：
+
+```yaml
+# $DSH_HOME/profiles/web/cordis.patch.yml
+- id: biomni
+  config:
+    guidance: ''
+```
+
+这正是 preset 存在的理由：不装 preset 时，那 60 行生物医学提示词会挂在这个 profile 上**每一个** agent 的请求前缀上，包括正在帮你重构 TypeScript 的那个。
+
+安装脚本**不拷贝**一份 composition 进仓库，而是从你自己 harness 里的 `standard` preset 现场生成，只替换人格行 —— 仓库里 vendor 一份 YAML 会随 dsh 版本静默漂移，而漂移的症状是 agent 悄悄少了个工具。
+
 ## 开发
 
 ```sh
@@ -227,7 +264,27 @@ pnpm build          # tsc 出类型 + tsdown 出 lib
 pnpm typecheck
 pnpm test           # 不需要 biomni
 DSH_BIOMNI_PYTHON=/abs/path/.venv/bin/python pnpm run test:biomni
+pnpm run test:mount # 真实 dsh 端到端挂载（需要 dsh CLI）
 ```
+
+### 端到端挂载验证
+
+`test/verify-bundle.sh` 把发布产物装进一个隔离的 `$DSH_HOME`，启动，然后检查这个插件拥有的每一条接缝。**已在真实 dsh 0.1.0-rc.6 上跑通**：
+
+```
+✓ dsh-biomni joined dsh.profile.bundles
+✓ the dsh-biomni row merged
+✓ booted with no dsh-biomni load or apply error
+✓ settings.get answers and resolves the settings document
+✓ the trust fence refuses an untrusted Host
+✓ env.probe answers
+✓ the shell will load the dsh-biomni client bundle
+✓ the served bundle is byte-identical to lib/client.js
+```
+
+这条脚本是本仓库对「绕开 allowlist 的设置方案真的成立」的唯一实证 —— 在它之前那只是个论证。
+
+两个踩过的坑写在脚本注释里：patch 行是**替换**而不是合并（只写 `port` 会丢掉 `host`，报错看起来像插件的问题），以及启动检查必须要求服务**真的起来**，只 grep 自己的行名会让 webserver 起不来也照样通过。
 
 Biomni 那条测试在解释器没有 biomni 时是 skip 而不是 fail，所以默认的 `pnpm test` 在裸解释器上也能跑通。
 

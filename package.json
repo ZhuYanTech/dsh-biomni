@@ -44,23 +44,27 @@
     }
   },
   "files": [
-    "lib/index.js",
-    "lib/prefs-shared.js",
-    "lib/client.js",
-    "lib/client-registry.js",
-    "lib/types/**/*.d.ts",
-    "python/worker.py",
-    "python/probe.py",
-    "python/requirements-biomni.txt",
-    "src",
-    "scripts/install.sh",
-    "cordis.patch.yml",
-    "dsh.plugin.json",
+    "LICENSE",
     "README.md",
     "README_EN.md",
-    "LICENSE",
+    "cordis.patch.yml",
+    "dsh.plugin.json",
+    "lib/client-registry.js",
+    "lib/client.js",
+    "lib/index.js",
+    "lib/prefs-shared.js",
+    "lib/types/**/*.d.ts",
+    "preset",
     "python/_gates.py",
-    "python/skills.py"
+    "python/probe.py",
+    "python/requirements-biomni.txt",
+    "python/skills.py",
+    "python/worker.py",
+    "scripts/install-preset.sh",
+    "scripts/install.sh",
+    "skills",
+    "src",
+    "test/verify-bundle.sh"
   ],
   "scripts": {
     "build": "rm -rf lib && tsc -p tsconfig.build.json && tsdown",
@@ -70,7 +74,9 @@
     "bundle": "tsdown",
     "watch": "tsdown --watch",
     "test": "vitest run",
-    "test:biomni": "vitest run tests/biomni.spec.ts"
+    "test:biomni": "vitest run tests/biomni.spec.ts",
+    "test:mount": "bash test/verify-bundle.sh",
+    "install:preset": "bash scripts/install-preset.sh"
   },
   "license": "MIT",
   "peerDependencies": {

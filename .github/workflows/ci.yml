@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  check:
+    name: typecheck / build / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22, not 20. `dsh` bundles pnpm 11.x, which requires >=22.13; on 20
+      # the mount job fails inside the CLI with an error that reads like a
+      # plugin fault. Keeping both jobs on one version keeps that from being
+      # rediscovered here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      # bundle.spec.ts asserts the built artifacts, so it must run after build.
+      - run: pnpm test
+
+      # The Python halves are executable contracts, not just data files: probe
+      # and catalog both run under whatever interpreter a deployment configures.
+      - name: python syntax
+        run: python3 -m compileall -q python/
+
+      # The catalog and probe must agree about what is callable. Without Biomni
+      # installed this only proves they run and produce well-formed JSON;
+      # the agreement itself is asserted by biomni.spec.ts against a real venv.
+      - name: python halves run on a bare interpreter
+        run: |
+          python3 python/probe.py | python3 -c 'import json,sys; json.load(sys.stdin)'
+          python3 python/skills.py | python3 -c 'import json,sys; json.load(sys.stdin)'
+
+  mount:
+    name: mount into a real harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # Pinned to the version this plugin's peer range names. The developer
+      # preview moves fast and upstream warns of compatibility-breaking
+      # changes, so an unpinned CLI would make this job's failures ambiguous.
+      - name: install the dsh CLI
+        run: npm i -g @deepseek-ai/dsh@0.1.0-rc.6
+
+      - run: pnpm install --frozen-lockfile
+
+      # Installs the packed artifact into an isolated $DSH_HOME, boots it, and
+      # checks the routes, the trust fence, the probe, and the client bundle.
+      # See test/verify-bundle.sh.
+      - name: verify the mount
+        run: bash test/verify-bundle.sh

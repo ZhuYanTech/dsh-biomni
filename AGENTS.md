@@ -72,6 +72,26 @@ skill 名必须是 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`），而 Biomni 的
 
 **两道门的分析只有一份实现**（`python/_gates.py`），`probe.py` 和 `skills.py` 都用它。设置页和 skill 目录对「什么能调用」给出两种说法，是这里最容易犯也最难查的错。`tests/biomni.spec.ts` 有一条专门比对两者的用例。
 
+## 4c. 两种安装形态的分工，以及一条硬约束
+
+| 形态 | 承载 | 作用域 |
+|---|---|---|
+| profile bundle | 能力（`run_python`、设置页、skill 目录） | 整个 profile |
+| agent preset | 框架（生物医学人格） | 单个 agent |
+
+**preset 挂不了本插件。** preset 行里的裸包名从 harness 安装目录解析，不是 profile 的 node_modules（`@deepseek-ai/dsh-agent-presets` 的 `PresetTree.import`，注释写得很明确）；相对路径同样不行，因为 preset 目录下没有 node_modules 能解析本插件的依赖（dsh-science 把引擎做成零依赖正是为了绕开这点）。别再试了，也别为此把插件改成零依赖。
+
+`scripts/install-preset.sh` **从用户自己的 harness 生成** composition，只替换人格行。不要改成往仓库里 vendor 一份 standard preset 的拷贝：那会随 dsh 版本静默漂移，症状是 agent 悄悄少了个工具。
+
+## 4d. 挂载验证不能省
+
+`test/verify-bundle.sh` 是本仓库唯一证明「绕开 allowlist 的设置方案在真实 dsh 上成立」的东西。改动 `src/api.ts`、`src/index.ts` 的路由挂载、`src/client/index.tsx` 的 slot 注册，或 `package.json` 的 `dsh` / `files` 字段之后，都要重跑它。
+
+两个反复踩到的点：
+
+- **patch 行是替换，不是合并。** 只写 `port` 会丢掉 `host`，报错是 `$.host missing required value`，看起来像插件的问题。
+- **启动检查必须要求服务真的起来。** 用 `|| true` 启动再只 grep 自己的行名，webserver 起不来也照样"通过"。
+
 ## 5. 守卫的两个方向都要测
 
 `SHELL_PYTHON` 锚定在命令位置。改这个正则时，`tests/guard.spec.ts` 的两张表都要过：

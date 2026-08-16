@@ -25,6 +25,7 @@ import {
 } from '../src/skills/catalog.ts'
 import { describeModule, renderSkillBody } from '../src/skills/render.ts'
 import { createBiomniSkillProvider, PROVIDER_NAME } from '../src/skills/provider.ts'
+import { loadStaticSkills } from '../src/skills/static.ts'
 
 /** One function, with only the fields a test cares about spelled out. */
 function fn(name: string, over: Partial<CatalogFunction> = {}): CatalogFunction {
@@ -222,8 +223,29 @@ async function candidatesOf(provider: SkillProvider): Promise<readonly SkillCand
   return Array.isArray(listed) ? listed : (listed as SkillProviderObservation).candidates
 }
 
+describe('the shipped skills', () => {
+  it('loads the workflow skill with its frontmatter and body', () => {
+    const shipped = loadStaticSkills()
+    const workflow = shipped.find(skill => skill.name === 'biomni-workflow')
+    expect(workflow).toBeDefined()
+    expect(workflow!.description).toContain('persistent Python interpreter')
+    // The frontmatter must not survive into the body the model reads.
+    expect(workflow!.content.startsWith('---')).toBe(false)
+    expect(workflow!.content).toContain('# Working with Biomni here')
+  })
+
+  it('carries the rule that loses the most work', () => {
+    // A snippet ending in an assignment returns nothing, so the result is
+    // invisible even though the call succeeded. Biomni's own protocol states
+    // this; losing it from the skill is losing the point of the skill.
+    const workflow = loadStaticSkills().find(skill => skill.name === 'biomni-workflow')!
+    expect(workflow.content).toMatch(/print/)
+    expect(workflow.content).toMatch(/ends in an assignment returns nothing/i)
+  })
+})
+
 describe('the provider', () => {
-  it('lists one candidate per advertisable module', async () => {
+  it('lists the shipped skills before the generated ones', async () => {
     const { service } = stubSubprocess(CATALOG)
     const provider = createBiomniSkillProvider(
       { subprocess: service, python: () => '/venv/bin/python' },
@@ -231,9 +253,34 @@ describe('the provider', () => {
     )
     const candidates = await candidatesOf(provider)
     expect(candidates.map(candidate => candidate.name))
-      .toEqual(['biomni-literature', 'biomni-molecular-biology'])
+      .toEqual(['biomni-workflow', 'biomni-literature', 'biomni-molecular-biology'])
     expect(candidates[0]!.provider).toBe(PROVIDER_NAME)
     expect(candidates[0]!.invocation).toEqual({ modelInvocable: true, userInvocable: true })
+  })
+
+  it('serves the shipped skills even when the catalog build fails', async () => {
+    // How to organize the work does not depend on the interpreter.
+    const { service } = stubSubprocess('', 1)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/no/such/python', onError: () => {} },
+      stubControl(),
+    )
+    const listed = await provider.list({})
+    const observation = listed as SkillProviderObservation
+    expect(observation.complete).toBe(false)
+    expect(observation.candidates.map(candidate => candidate.name)).toEqual(['biomni-workflow'])
+  })
+
+  it('loads a shipped skill body verbatim', async () => {
+    const { service } = stubSubprocess(CATALOG)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/venv/bin/python' },
+      stubControl(),
+    )
+    const candidates = await candidatesOf(provider)
+    const workflow = candidates.find(candidate => candidate.name === 'biomni-workflow')!
+    const definition = await provider.get(workflow, {})
+    expect(definition?.content).toContain('# Working with Biomni here')
   })
 
   it('loads the body for a listed candidate', async () => {
@@ -243,7 +290,8 @@ describe('the provider', () => {
       stubControl(),
     )
     const candidates = await candidatesOf(provider)
-    const definition = await provider.get(candidates[0]!, {})
+    const literature = candidates.find(candidate => candidate.name === 'biomni-literature')!
+    const definition = await provider.get(literature, {})
     expect(definition?.name).toBe('biomni-literature')
     expect(definition?.content).toContain('query_pubmed')
   })
@@ -278,14 +326,18 @@ describe('the provider', () => {
     expect(control.invalidated).toBe(1)
   })
 
-  it('reports no skills, completely, when the interpreter has no biomni', async () => {
-    // Authoritative absence, not failure: caching it is correct.
+  it('reports no MODULE skills, completely, when the interpreter has no biomni', async () => {
+    // Authoritative absence, not failure: caching it is correct. The shipped
+    // skills stay, because they do not depend on the interpreter.
     const { service } = stubSubprocess({ biomni: null, modules: [] })
     const provider = createBiomniSkillProvider(
       { subprocess: service, python: () => 'python3' },
       stubControl(),
     )
-    await expect(provider.list({})).resolves.toEqual([])
+    const listed = await provider.list({})
+    expect(Array.isArray(listed)).toBe(true)
+    expect((listed as readonly SkillCandidate[]).map(candidate => candidate.name))
+      .toEqual(['biomni-workflow'])
   })
 
   it('degrades to an incomplete observation when the build fails', async () => {
@@ -297,7 +349,9 @@ describe('the provider', () => {
       { subprocess: service, python: () => '/no/such/python', onError },
       stubControl(),
     )
-    await expect(provider.list({})).resolves.toEqual({ candidates: [], complete: false })
+    const listed = await provider.list({}) as SkillProviderObservation
+    expect(listed.complete).toBe(false)
+    expect(listed.candidates.every(candidate => candidate.name === 'biomni-workflow')).toBe(true)
     expect(onError).toHaveBeenCalledOnce()
   })
 
@@ -308,7 +362,8 @@ describe('the provider', () => {
       { subprocess: service, python: () => 'python3', onError },
       stubControl(),
     )
-    await expect(provider.list({})).resolves.toEqual({ candidates: [], complete: false })
+    const listed = await provider.list({}) as SkillProviderObservation
+    expect(listed.complete).toBe(false)
     expect(onError).toHaveBeenCalledOnce()
   })
 })
