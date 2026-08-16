@@ -27,3 +27,6 @@ export const WORKER_PATH = assetPath('worker.py')
 
 /** The one-shot environment survey. */
 export const PROBE_PATH = assetPath('probe.py')
+
+/** The one-shot skill-catalog generator. */
+export const SKILLS_PATH = assetPath('skills.py')

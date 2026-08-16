@@ -20,6 +20,7 @@
  */
 import type { Context } from 'cordis'
 import type { ToolDefinition, ToolGuard } from '@deepseek-ai/dsh-tools'
+import type { SkillProvider, SkillProviderControl } from '@deepseek-ai/dsh-skill'
 
 // ── HTTP (webserver) ────────────────────────────────────────────────────────
 
@@ -188,6 +189,20 @@ export interface BiomniToolsService {
   guard(guard: ToolGuard): () => void
 }
 
+/**
+ * The skill registry face (mirror of @deepseek-ai/dsh-skill's `ctx.skills`).
+ * Only `registerProvider` is used; the real `SkillProvider` types come from the
+ * published package rather than being mirrored.
+ */
+export interface BiomniSkillsService {
+  /**
+   * Register one skill provider. The synchronous factory receives this
+   * registration's lifecycle and invalidation control.
+   * @returns the disposer that unregisters the provider.
+   */
+  registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void
+}
+
 /** The settings service face (mirror of @deepseek-ai/dsh-settings' SettingsProvider). */
 export interface BiomniSettingsService {
   /**
@@ -270,6 +285,11 @@ declare module 'cordis' {
     commands: BiomniCommandsService
     tools: BiomniToolsService
     settings: BiomniSettingsService
+    /**
+     * The skill registry (`@deepseek-ai/dsh-skill`). Optional: reached through
+     * a child fiber so a deployment without it keeps the interpreter.
+     */
+    skills: BiomniSkillsService
     /** Client side only. */
     slots: BiomniSlotsService
     /** Client side only. */

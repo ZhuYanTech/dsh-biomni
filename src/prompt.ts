@@ -71,18 +71,21 @@ once, then build on what is already bound.
   glycoengineering (3)     glycan design
   lab_automation (3)       protocol and instrument control
 
-Do not guess function names or signatures — introspect them, which is cheap here because
-the interpreter persists:
+Do not guess function names or signatures. Each module above has a \`biomni-<module>\`
+skill carrying its exact signatures, parameter types, defaults, and what each parameter
+means — load that skill before calling into a module you have not used yet. The skills
+are generated from the interpreter that is actually configured, so they list only what
+this environment can really call, and they name what it cannot.
+
+Which modules exist here is therefore whatever the skill catalog offers; do not assume a
+module is present because it is listed above. Failing that, introspection is cheap
+because the interpreter persists:
 
     import inspect
     from biomni.tool import database
     print([n for n in dir(database) if not n.startswith("_")])
     print(inspect.signature(database.query_uniprot))
     print(database.query_uniprot.__doc__)
-
-Unavailable in this environment: \`genetics\`, \`genomics\`, and \`bioimaging\`, whose
-dependencies (torch, esm, SimpleITK) are not installed. Say so rather than working
-around it silently.
 
 A module that imports fine can still have individual functions that raise
 \`ModuleNotFoundError\` on call, because some import their dependencies lazily in the

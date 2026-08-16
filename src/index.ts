@@ -28,6 +28,7 @@ import { shellPythonGuard } from './guard.ts'
 import { probeEnvironment, renderReport } from './probe.ts'
 import { pythonWorkers } from './python/workers.ts'
 import { runPythonTool } from './python/tool.ts'
+import { createBiomniSkillProvider } from './skills/provider.ts'
 import { isTrustedApiRequest } from './trust-fence.ts'
 import { readJsonBody, writeError, writeJson, writeOk, BiomniError } from './wire.ts'
 
@@ -100,13 +101,16 @@ export function apply(ctx: Context, config: BiomniConfig): void {
   // ── The interpreter pool ─────────────────────────────────────────────────
   const workers = pythonWorkers(ctx, live)
 
-  // A running interpreter keeps the executable it was started with, so pointing
-  // the setting somewhere else has to retire the current ones to mean anything.
+  // Things that must react to a changed interpreter. A running worker keeps the
+  // executable it was started with, and a skill catalog generated from a
+  // different interpreter is not stale but wrong, so both are retired.
+  const onPythonChanged = new Set<() => void>()
   let currentPython = live.python
   scope.watch((next) => {
     if (next.python === currentPython) return
     currentPython = next.python
     void workers.resetAll()
+    for (const react of onPythonChanged) react()
   })
 
   // ── Model-facing surfaces ────────────────────────────────────────────────
@@ -147,6 +151,29 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     settings: () => settingsFace,
     python: () => live.python,
     probe: python => probeEnvironment(ctx, python),
+  })
+
+  // ── The skill catalog ────────────────────────────────────────────────────
+  // One skill per importable tool module, generated from the configured
+  // interpreter. This is the answer to what Biomni built ToolRetriever for: the
+  // session catalog carries only a name and a one-line description per module,
+  // and the model loads a module's full signatures on demand. Mounted from a
+  // child fiber so a deployment without the skills service still works.
+  ctx.inject(['skills'], (sctx) => {
+    sctx.effect(() => sctx.skills.registerProvider((control) => {
+      const provider = createBiomniSkillProvider({
+        subprocess: ctx.subprocess,
+        python: () => live.python,
+        onError: (error) => {
+          // Discovery failing is worth saying once; it must not be silent, and
+          // it must not be fatal.
+          sctx.logger.warn(`skill catalog unavailable: ${String((error as Error | undefined)?.message ?? error)}`)
+        },
+      }, control)
+      onPythonChanged.add(provider.invalidate)
+      return provider
+    }), 'dsh-biomni: skill provider')
+    sctx.effect(() => () => { onPythonChanged.clear() })
   })
 
   // Mounted from a child fiber so a deployment without a web server (headless)
