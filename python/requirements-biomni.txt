@@ -1,0 +1,72 @@
+# Interpreter contents for the run_python worker.
+#
+#   python3.11 -m venv .venv
+#   .venv/bin/pip install -r python/requirements-biomni.txt
+#
+# Then point the plugin at it. Easiest is Settings -> Biomni in the web UI;
+# equivalently, write it into the settings document ($DSH_HOME/settings.yaml):
+#
+#   biomni:
+#     python: /abs/path/to/.venv/bin/python
+#
+# Either applies without a restart. To set the DEPLOYMENT default instead, use
+# your profile's own patch layer ($DSH_HOME/profiles/<name>/cordis.patch.yml).
+#
+# Run /biomni, or open Settings -> Biomni, to see what this actually bought:
+# which modules import, and which functions are callable. They are not the
+# same number.
+#
+# Biomni declares only pydantic, langchain, and python-dotenv. Everything below
+# is undeclared: found by reading its source, and required for its tools to
+# import or run. Two separate mechanisms are at work, and both bite.
+
+biomni==0.0.8
+
+# --- Gate 1: module-level imports -------------------------------------------
+# biomni.tool.__init__ imports biomni.utils, so without these NO tool module
+# imports at all — and the error names neither of them.
+tqdm
+pandas
+
+# Unlocks 18 of 21 tool modules. The heavy imports sit at module level, so a
+# module is either fully importable or not at all; there is no importing "just
+# the part you need".
+numpy
+biopython
+PyPDF2
+beautifulsoup4
+googlesearch-python
+matplotlib
+
+# --- Gate 2: lazy imports inside function bodies ----------------------------
+# A module that imports cleanly can still have functions that fail on call.
+# These are invisible to any module-level analysis. Installing this block took
+# functions blocked by an undeclared lazy import from 90 to 26 (of 312), for
+# about 800 MB.
+scipy                  # 43 functions — by far the best return here
+scikit-image           # 18
+opencv-python-headless # 10
+scikit-learn           #  4
+statsmodels
+networkx
+python-louvain         # imported as `community`
+rdkit
+nibabel
+trackpy
+pyliftover
+cobra
+
+# literature.query_pubmed / query_arxiv / query_scholar each need one of these.
+# query_pubmed is the module's most useful entry point and fails without pymed.
+pymed
+arxiv
+scholarly
+
+# --- Deliberately excluded ---------------------------------------------------
+# torch, esm, gget, gseapy, scanpy, pybiomart   -> genetics, genomics modules
+# SimpleITK, nnunet                             -> bioimaging module
+# DeepPurpose, FlowCytometryTools, flowkit,     -> the remaining 26 blocked
+#   scvi, popv, harmony, msprime, nilearn,         functions, mostly single-use
+#   pykalman, accelerate, transformers, tdc,
+#   cellpose, libsbml, reportlab, cooler,
+#   pybedtools, RNA, anthropic
