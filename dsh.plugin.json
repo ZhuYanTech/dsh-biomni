@@ -2,12 +2,15 @@
   "id": "dsh-external/dsh-biomni",
   "version": "0.1.0",
   "main": "./lib/index.js",
-  "description": "会话级持久 Python 解释器，装载 Biomni 生物医学工具库；设置页给出该解释器实际可用的模块与函数报告",
+  "description": "会话级持久 Python 解释器，装载 Biomni 生物医学工具库；每个工具模块一个 skill，签名从实装的解释器现场生成；设置页报告该解释器实际可用的模块与函数",
   "engines": {
     "dsh": ">=0.0.1"
   },
   "contributes": {
-    "tools": [],
+    "tools": [
+      "run_python"
+    ],
+    "//": "Skills are contributed through a runtime provider (ctx.skills.registerProvider), not as static manifest entries: the catalog is generated from whichever interpreter is configured, so its names are not knowable at publish time.",
     "skills": []
   },
   "client": {

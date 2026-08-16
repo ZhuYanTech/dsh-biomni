@@ -22,6 +22,7 @@ Three things sit around that tool, and none is optional:
 |---|---|---|
 | System-prompt section | Declares the interpreter and the module inventory | Registering the tool is not enough — measured: the model reaches for bash |
 | `bash` guard | Denies shell invocations of `python` / `pip` | The prompt fixes only the FIRST choice; mid-task the model still falls back |
+| **Skill catalog** | One skill per tool module, carrying real signatures | 218 function schemas do not fit in context — the problem Biomni built `ToolRetriever` for |
 | Environment probe | The `/biomni` command + the Settings page | "module imports" and "function is callable" are two different numbers |
 
 ---
@@ -33,11 +34,52 @@ Biomni's kernel is three things, and only the first two are worth reproducing:
 | Biomni | What it is | Here |
 |---|---|---|
 | `run_python_repl` | one interpreter whose namespace persists across the agent's turns | the `run_python` tool |
-| `biomni/tool/*.py` | ~200 domain functions across 20 modules, MIT licensed | reused as ordinary libraries inside that interpreter |
-| `ToolRetriever` | picks a relevant subset of tools for the prompt, because 200+ schemas do not fit context | **not** reproduced — see below |
+| `biomni/tool/*.py` | 218 domain functions across 21 modules, MIT licensed | reused as ordinary libraries inside that interpreter |
+| `ToolRetriever` | picks a relevant subset of tools for the prompt, because 200+ schemas do not fit context | **the DSH skill catalog** — see below |
 | `<execute>` / `<solution>` tags | a text protocol that pre-dates reliable function calling | **not** reproduced — dsh has native tool calling |
 
-**The prompt lists modules, not functions.** All ~183 of them would not fit, and they do not need to: the interpreter is persistent, so the model introspects with `dir()` and `inspect.signature()` for the cost of one call, and that never goes stale. This is a cheaper answer to the problem Biomni solves with a retrieval layer — and the observed loop is exactly guess → introspect → correct.
+---
+
+## Skills: Biomni's retrieval layer, in the harness's own shape
+
+Biomni built `ToolRetriever` because 200+ tool schemas do not fit in context, so it embeds them and selects a subset per prompt.
+
+**DSH's skill system already is that, in a better shape.** The session catalog carries only each skill's `name` and `description`; the full body loads **on demand** through the `skill` tool. No embeddings, no similarity search, no retriever that can pick wrong — selection is the model's own judgment.
+
+This plugin registers **one skill per importable tool module**, generated from **the interpreter that is actually configured**:
+
+```
+biomni-database            40 functions  UniProt / AlphaFold / PDB / InterPro lookups
+biomni-pharmacology        20 functions  drugs, targets, pharmacokinetics
+biomni-molecular-biology   18 functions  sequence and construct work
+…18 in total
+```
+
+Measured, against Biomni 0.0.8:
+
+| | Cost |
+|---|---|
+| The catalog (**always resident**, 18 name+description rows) | **≈ 1.6k tokens** |
+| One body (loaded on demand) | 0.4k – 4.4k tokens |
+| All 218 functions inlined instead | ≈ 26k tokens |
+
+Bodies carry **real signatures** rendered from Biomni's own metadata: parameter types, defaults, and what each parameter means. That beats the introspection loop the prompt otherwise recommends — `dir()` plus `inspect.signature()` costs a call and does not carry the parameter descriptions, which is where the meaning lives.
+
+### Why generated at runtime rather than shipped as static markdown
+
+Because **a skill body listing functions this interpreter cannot call is precisely the failure this project exists to prevent.**
+
+The skill catalog and the Settings report share one two-gate analysis (`python/_gates.py`), so they cannot give two answers about what is callable. Concretely:
+
+- Modules blocked by gate 1 (`genomics`, `bioimaging`, `genetics`) **never enter the catalog** — not one function under them can run, so a row would be pure cost. What they are and what they need is shown on the Settings page.
+- Functions blocked by gate 2 **stay out of the usable list but are named at the end of the body**, with the package each needs and an instruction to report it rather than install or reimplement. Hiding them entirely is worse: the model rediscovers the gap by calling and failing, and the observed reaction is not a clean error report — it is a quietly hand-rolled substitute.
+- Changing the `python` setting invalidates the catalog at once. A catalog generated from another interpreter is not stale, it is **wrong**.
+
+No Biomni means no skills — an authoritative answer, not a failure.
+
+---
+
+**The prompt lists modules, not functions.** 218 signatures do not fit in the request prefix and do not belong there: they live in the skills now, loaded on demand. The prompt's job is to point the model at them.
 
 ---
 
@@ -208,7 +250,9 @@ The client bundle may not value-import non-allowlisted `@deepseek-ai/*` packages
 
 ## Status
 
-The execution kernel, the Settings page, and the environment probe work and are covered by tests. Next up is polish on the domain tool library, and the argument for whether a retrieval layer is worth building.
+The execution kernel, the Settings page, the environment probe, and the skill catalog all work and are covered by tests — all three parts of Biomni's kernel (persistent interpreter, tool library, retrieval layer) now have a counterpart.
+
+Not done yet: catalogs for the data lake (76 datasets, needing a separate ~11 GB download this plugin does not manage) and the software library (113 entries). Both are readable from `biomni.env_desc`.
 
 ## License
 

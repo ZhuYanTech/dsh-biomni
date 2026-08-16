@@ -60,6 +60,18 @@ host:   ctx.settings.register(ns, PrefsSchema)     ← 进程内持有，无 all
 
 `report.gate`（`tqdm` / `pandas`）要单独最响地报出来：它俩通过 `biomni.tool.__init__ → biomni.utils` 一次性卡住全部模块，而且报错不提它们。
 
+## 4b. skill 目录：三条不能破的规则
+
+skill 是**运行时**从配置的解释器生成的（`python/skills.py`），不是随包发的静态 markdown。
+
+1. **目录只登可用的东西。** 门 1 挡住的模块不进目录（底下没一个函数能跑）；门 2 挡住的函数不进「可用」列表。改 `advertisableModules` / `isCallable` 时想清楚：目录里出现一个调不通的函数，就是在制造那个「agent 默默手搓替代品」的场景。
+2. **被挡住的函数要点名，不要藏。** body 末尾那段「needs `X`，报告它，不要自己装也不要重新实现」是反造假指令，`tests/skills.spec.ts` 钉着。完全隐藏会让模型靠「调用→失败」重新发现，而实测的失败反应不是干净报错。
+3. **`python` 一变就 invalidate。** 从另一个解释器生成的目录不是陈旧，是错的。`index.ts` 里 `onPythonChanged` 这条线不能断。
+
+skill 名必须是 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`），而 Biomni 的模块名是 snake_case —— `skillNameOf()` 负责转换，别绕过它。
+
+**两道门的分析只有一份实现**（`python/_gates.py`），`probe.py` 和 `skills.py` 都用它。设置页和 skill 目录对「什么能调用」给出两种说法，是这里最容易犯也最难查的错。`tests/biomni.spec.ts` 有一条专门比对两者的用例。
+
 ## 5. 守卫的两个方向都要测
 
 `SHELL_PYTHON` 锚定在命令位置。改这个正则时，`tests/guard.spec.ts` 的两张表都要过：
@@ -88,11 +100,12 @@ host:   ctx.settings.register(ns, PrefsSchema)     ← 进程内持有，无 all
 
 | spec | 覆盖 | 需要 |
 |---|---|---|
-| `kernel.spec.ts` | 工具注册、跨调用状态、子进程捕获、traceback 过滤、串行化、headless | 一个裸 `python3` |
+| `kernel.spec.ts` | 工具注册、跨调用状态、子进程捕获、traceback 过滤、串行化、headless、无 skills 服务 | 一个裸 `python3` |
 | `guard.spec.ts` | 守卫两个方向的边界 | — |
+| `skills.spec.ts` | 目录筛选、body 渲染、provider 缓存与失效、降级 | — |
 | `prefs.spec.ts` | 客户端逐字段回退与钳制 | — |
 | `api.spec.ts` | 信任围栏、revision 守卫、错误映射 | — |
 | `bundle.spec.ts` | 两条通道的产物形状、manifest 一致性 | `pnpm build` |
-| `biomni.spec.ts` | 真实 Biomni 解释器 | `DSH_BIOMNI_PYTHON` |
+| `biomni.spec.ts` | 真实 Biomni 解释器；**探针与 skill 目录的一致性** | `DSH_BIOMNI_PYTHON` |
 
 **stub 必须照着真实 seam 的类型写，不是照着「能过」写。** 上一版的 stub 自己发明了一个 async `read()`，测试全绿，接到真 dsh 上就炸了——真实的 reader 是同步的 `readFrom(offset)`。`tests/stubs.ts` 的每个形状都是从 `src/context-types.ts` 抄的。

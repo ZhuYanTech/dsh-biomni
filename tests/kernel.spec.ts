@@ -60,6 +60,35 @@ describe('plugin shape', () => {
     expect(route!.kind).toBe('prefix')
   })
 
+  it('registers the skill provider', () => {
+    expect(rec.skillProviders).toHaveLength(1)
+    expect(rec.skillProviders[0]!.provider.name).toBe('dsh-biomni')
+  })
+
+  it('invalidates the skill catalog when the interpreter changes', async () => {
+    // A catalog built from another interpreter describes functions this session
+    // cannot call. Its own context: changing the interpreter is a destructive
+    // edit, and the shared one above is still serving the live-interpreter
+    // tests.
+    const isolated = stubContext()
+    apply(isolated.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+    expect(isolated.rec.invalidations).toBe(0)
+    isolated.rec.setUser({ python: '/some/other/venv/bin/python' })
+    expect(isolated.rec.invalidations).toBe(1)
+    // Same value again is not a change, so it must not churn the catalog.
+    isolated.rec.setUser({ python: '/some/other/venv/bin/python' })
+    expect(isolated.rec.invalidations).toBe(1)
+    await Promise.all(isolated.rec.disposers.map(dispose => dispose()))
+  })
+
+  it('keeps the interpreter when the deployment has no skills service', async () => {
+    const bare = stubContext({ withoutSkills: true })
+    apply(bare.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+    expect(bare.rec.tools).toHaveLength(1)
+    expect(bare.rec.skillProviders).toHaveLength(0)
+    await Promise.all(bare.rec.disposers.map(dispose => dispose()))
+  })
+
   it('keeps the interpreter under a headless profile that has no web server', async () => {
     // The routes carry the Settings section only. A deployment running
     // @deepseek-ai/dsh-headless has no webServer, and losing run_python there

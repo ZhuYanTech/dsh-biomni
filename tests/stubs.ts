@@ -10,6 +10,7 @@
  */
 import { spawn } from 'node:child_process'
 import type { ToolDefinition, ToolGuard } from '@deepseek-ai/dsh-tools'
+import type { SkillProvider, SkillProviderControl } from '@deepseek-ai/dsh-skill'
 import type {
   BiomniHttpRequest,
   BiomniHttpResponse,
@@ -32,6 +33,8 @@ export interface Recorder {
   }>
   routes: BiomniWebRoute[]
   sections: Array<{ name: string; order: number; text: string }>
+  /** Skill providers registered, paired with the control each received. */
+  skillProviders: Array<{ provider: SkillProvider; control: SkillProviderControl }>
   disposers: Array<() => void | Promise<void>>
   /** The mutable user layer over the composition base. */
   userLayer: Partial<BiomniPrefs>
@@ -41,6 +44,8 @@ export interface Recorder {
   revision: number
   /** When set, `settings.update` rejects with this message. */
   updateRejection: string | null
+  /** How many times a registered provider's control was invalidated. */
+  invalidations: number
   /** Write one user-layer field and fire the watchers, as a real commit would. */
   setUser(patch: Partial<BiomniPrefs>): void
 }
@@ -87,19 +92,25 @@ function stubSubprocess() {
  * Build a stub context plus the recorder that observes it.
  * @param options.withoutWeb - drop the webServer/webRuntime services, as a
  * headless profile does, so the child fiber never activates.
+ * @param options.withoutSkills - drop the skills service, so the skill
+ * provider's child fiber never activates.
  */
-export function stubContext(options: { withoutWeb?: boolean } = {}): { ctx: Context; rec: Recorder } {
+export function stubContext(
+  options: { withoutWeb?: boolean; withoutSkills?: boolean } = {},
+): { ctx: Context; rec: Recorder } {
   const rec: Recorder = {
     tools: [],
     guards: [],
     commands: [],
     routes: [],
     sections: [],
+    skillProviders: [],
     disposers: [],
     userLayer: {},
     watchers: [],
     revision: 1,
     updateRejection: null,
+    invalidations: 0,
     setUser(patch) {
       const prev = resolved()
       Object.assign(rec.userLayer, patch)
@@ -158,6 +169,19 @@ export function stubContext(options: { withoutWeb?: boolean } = {}): { ctx: Cont
         return () => {}
       },
     },
+    logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
+    ...(options.withoutSkills === true ? {} : {
+      skills: {
+        registerProvider: (create: (control: SkillProviderControl) => SkillProvider) => {
+          const control: SkillProviderControl = {
+            signal: new AbortController().signal,
+            invalidate: () => { rec.invalidations += 1 },
+          }
+          rec.skillProviders.push({ provider: create(control), control })
+          return () => {}
+        },
+      },
+    }),
     ...(options.withoutWeb === true ? {} : {
       webServer: {
         register: (route: BiomniWebRoute) => { rec.routes.push(route); return () => {} },
