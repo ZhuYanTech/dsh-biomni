@@ -7,14 +7,25 @@ list of dicts carrying each function's name, prose description, and required /
 optional parameters with types and defaults. That is the material a skill body
 needs, and it is far better than anything derived from signatures alone.
 
-Two things are joined here:
+Three catalogs are emitted, and each joins what Biomni ADVERTISES with what
+this environment actually HAS:
 
-  * the ADVERTISED catalog, from tool_description — 218 functions across 21
-    modules, the curated subset Biomni exposes (the tool modules define more
-    public functions than that; the rest are helpers Biomni does not surface),
-  * the CALLABILITY verdicts, from `_gates` — the same analysis the environment
-    report renders, so the skill catalog and the Settings page cannot disagree
-    about what this interpreter can actually run.
+  * tool functions — from `tool_description`, 218 functions across 21 modules
+    (the curated subset Biomni exposes; the modules define more public
+    functions, the rest being helpers Biomni does not surface), joined with the
+    callability verdicts from `_gates`,
+  * the data lake — 76 datasets from `env_desc.data_lake_dict`, joined with
+    what is actually on disk under the configured data root, and independently
+    with the commercial-use subset in `env_desc_cm`,
+  * the software library — 113 packages and CLI tools from
+    `env_desc.library_content_dict`, joined with what is actually installed.
+
+All three verdicts come from `_gates`, the same module the environment report
+reads, so the skill catalog and the Settings page cannot disagree about what
+this environment can do.
+
+An optional argv[1] overrides the data lake root; without it the resolution
+follows Biomni's own (BIOMNI_PATH / BIOMNI_DATA_PATH / ./data).
 
 The description files are read with `ast.literal_eval`, not exec: they are pure
 data, and a catalog build has no business executing code out of site-packages.
@@ -70,10 +81,20 @@ def _parameter(raw, with_default):
     return out
 
 
-def catalog():
-    report = {"biomni": _gates.biomni_version(), "modules": []}
+def catalog(data_path=None):
+    report = {
+        "biomni": _gates.biomni_version(),
+        "modules": [],
+        "dataLake": {"path": str(_gates.data_lake_dir(data_path)), "exists": False, "present": 0, "entries": []},
+        "libraries": [],
+    }
     if report["biomni"] is None:
         return report
+
+    # These two read env_desc rather than the tool tree, so they are filled in
+    # even when biomni ships no tool_description directory at all.
+    report["dataLake"] = _gates.data_lake_entries(data_path)
+    report["libraries"] = _gates.library_entries()
 
     directory = _gates.tool_dir()
     if directory is None:
@@ -140,6 +161,6 @@ def catalog():
 
 if __name__ == "__main__":
     try:
-        print(json.dumps(catalog()))
+        print(json.dumps(catalog(sys.argv[1] if len(sys.argv) > 1 else None)))
     except Exception as exc:  # noqa: BLE001 - the caller renders this
         print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}))

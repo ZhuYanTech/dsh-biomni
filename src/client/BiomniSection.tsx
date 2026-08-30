@@ -90,6 +90,7 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
   // keystroke — a path is half-invalid while it is being typed, and a settings
   // write per character would fight the revision guard.
   const [pythonDraft, setPythonDraft] = useState<string>(BIOMNI_PREFS_DEFAULTS.python)
+  const [dataPathDraft, setDataPathDraft] = useState<string>(BIOMNI_PREFS_DEFAULTS.dataPath)
   const [timeoutDraft, setTimeoutDraft] = useState<string>(String(BIOMNI_PREFS_DEFAULTS.timeoutMs / 1000))
   const [error, setError] = useState<string | null>(null)
 
@@ -114,6 +115,7 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
     revisionRef.current = revision
     setPrefs(next)
     setPythonDraft(next.python)
+    setDataPathDraft(next.dataPath)
     setTimeoutDraft(String(Math.round(next.timeoutMs / 1000)))
     return next
   }, [])
@@ -210,6 +212,31 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
                 return
               }
               commit({ python: next })
+            }}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+          />
+        </div>
+
+        {/* Same full-width treatment as the interpreter, and for the same
+            reason. Empty is a valid value here — it means "resolve as Biomni
+            does" — so blur commits it rather than reverting to the last path. */}
+        <div className={`${css.row} ${css.pathRow}`}>
+          <div className={css.rowText}>
+            <span className={css.rowTitle}>{t('dataPathLabel')}</span>
+            <span className={css.rowDesc}>{t('dataPathDesc')}</span>
+          </div>
+          <input
+            type="text"
+            className={css.pathInput}
+            value={dataPathDraft}
+            spellCheck={false}
+            placeholder={t('dataPathPlaceholder')}
+            aria-label={t('dataPathLabel')}
+            onChange={event => { setDataPathDraft(event.currentTarget.value) }}
+            onBlur={() => {
+              const next = dataPathDraft.trim()
+              setDataPathDraft(next)
+              if (next !== prefs.dataPath) commit({ dataPath: next })
             }}
             onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
           />

@@ -53,17 +53,70 @@ export interface CatalogModule {
   functions: CatalogFunction[]
 }
 
+/** One advertised dataset in Biomni's data lake. */
+export interface CatalogDataset {
+  /** File name as Biomni advertises it, e.g. `DepMap_Model.csv`. */
+  name: string
+  description: string
+  /** Whether that file is actually on disk under the resolved root. */
+  present: boolean
+  /** Its size in bytes when present. */
+  bytes: number | null
+  /**
+   * Whether Biomni's commercial-use subset includes it. `false` means the
+   * dataset is restricted to non-commercial use; `null` means this Biomni
+   * ships no such subset, so the question cannot be answered here.
+   */
+  commercial: boolean | null
+}
+
+/** The data lake as the catalog found it. */
+export interface CatalogDataLake {
+  /** Absolute directory that was searched. */
+  path: string
+  /** Whether that directory exists at all. */
+  exists: boolean
+  /** How many advertised datasets are actually there. */
+  present: number
+  entries: CatalogDataset[]
+}
+
+/** One advertised package or command-line tool. */
+export interface CatalogLibrary {
+  name: string
+  /** As Biomni tags it; `unknown` when its description carries no tag. */
+  kind: 'python' | 'r' | 'cli' | 'unknown'
+  /** How it was actually located, when it was. */
+  found: 'python' | 'cli' | null
+  description: string
+  /**
+   * Whether it is installed. `null` is genuinely unverified — R packages on a
+   * machine that has R, which would cost one process each to check.
+   */
+  available: boolean | null
+}
+
 /** The whole catalog. */
 export interface SkillCatalog {
   /** Installed biomni version; null when the interpreter has none. */
   biomni: string | null
   modules: CatalogModule[]
+  /** Biomni's data lake; absent from an older payload. */
+  dataLake?: CatalogDataLake
+  /** Biomni's software library; absent from an older payload. */
+  libraries?: CatalogLibrary[]
   /** Set instead of the survey when generation failed inside Python. */
   error?: string
 }
 
 /** An empty catalog, used whenever generation fails. */
 export const EMPTY_CATALOG: SkillCatalog = { biomni: null, modules: [] }
+
+/** Skill name for the data lake listing. */
+export const DATA_LAKE_SKILL = 'biomni-data-lake'
+
+/** Skill name for the software library listing. */
+export const SOFTWARE_SKILL = 'biomni-software'
 
 /**
  * Generate the catalog by running `python/skills.py` in a throwaway process.
@@ -74,17 +127,22 @@ export const EMPTY_CATALOG: SkillCatalog = { biomni: null, modules: [] }
  *
  * @param ctx - the subprocess service.
  * @param python - the interpreter to read.
+ * @param dataPath - the data lake root; empty defers to Biomni's own resolution.
  * @param signal - caller cancellation (the registry aborts discovery through it).
  */
 export async function readCatalog(
   ctx: { subprocess: BiomniSubprocessService },
   python: string,
+  dataPath: string,
   signal?: AbortSignal,
 ): Promise<SkillCatalog> {
   const handle = ctx.subprocess.spawn({
-    argv: [python, SKILLS_PATH],
+    // An empty data root is omitted rather than passed through, so the script
+    // falls back to Biomni's own resolution instead of treating '' as a path.
+    argv: dataPath === '' ? [python, SKILLS_PATH] : [python, SKILLS_PATH, dataPath],
     cwd: process.cwd(),
-    // 218 functions with parameter metadata; the observed payload is ~200 KB.
+    // 218 functions with parameter metadata, plus 76 datasets and 113 library
+    // entries; the observed payload is ~210 KB.
     stdio: { stdin: 'ignore', stdout: { maxBytes: 4_000_000 }, stderr: { maxBytes: 8_192 } },
     graceMs: 5_000,
     ...(signal === undefined ? {} : { signal }),
@@ -125,4 +183,28 @@ export function advertisableModules(catalog: SkillCatalog): CatalogModule[] {
   return catalog.modules.filter(
     module => module.importable && module.functions.some(isCallable),
   )
+}
+
+/**
+ * The datasets worth advertising: the ones actually on disk.
+ *
+ * Same rule as unimportable modules, and it matters more here. A body listing
+ * 76 datasets that are not downloaded does not produce a model that reports the
+ * gap — it produces one that writes a plausible path into `pd.read_parquet`
+ * and reports a plausible result. Where the data lake IS and what it is missing
+ * belongs in the environment report, not in a skill body.
+ */
+export function presentDatasets(catalog: SkillCatalog): CatalogDataset[] {
+  return catalog.dataLake?.entries.filter(entry => entry.present) ?? []
+}
+
+/**
+ * The software worth advertising: what is installed, plus what could not be
+ * verified.
+ *
+ * Unverified entries stay in — they are marked as such in the body, and the
+ * alternative is hiding an R package that is in fact installed.
+ */
+export function availableLibraries(catalog: SkillCatalog): CatalogLibrary[] {
+  return (catalog.libraries ?? []).filter(entry => entry.available !== false)
 }

@@ -30,6 +30,7 @@ import { PROBE_PATH } from './python/paths.ts'
  *
  * @param ctx - the subprocess service.
  * @param python - the interpreter to survey.
+ * @param dataPath - the data lake root; empty defers to Biomni's own resolution.
  * @param signal - caller cancellation.
  * @returns the parsed report (its `error` field is set when the survey itself
  * failed inside Python; a failure to run at all throws).
@@ -37,10 +38,13 @@ import { PROBE_PATH } from './python/paths.ts'
 export async function probeEnvironment(
   ctx: { subprocess: BiomniSubprocessService },
   python: string,
+  dataPath = '',
   signal?: AbortSignal,
 ): Promise<ProbeReport> {
   const handle = ctx.subprocess.spawn({
-    argv: [python, PROBE_PATH],
+    // Empty is omitted rather than passed, so the script falls back to Biomni's
+    // own resolution instead of treating '' as a path.
+    argv: dataPath === '' ? [python, PROBE_PATH] : [python, PROBE_PATH, dataPath],
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 1_000_000 }, stderr: { maxBytes: 8_192 } },
     graceMs: 5_000,
@@ -111,6 +115,37 @@ export function renderReport(report: ProbeReport, prefs: BiomniPrefs): string {
     if (missing.length > MISSING_SHOWN) lines.push(`  ... and ${missing.length - MISSING_SHOWN} more packages`)
     lines.push('')
     lines.push(`  pip install ${missing.slice(0, MISSING_SHOWN).map(([pkg]) => pkg).join(' ')}`)
+  }
+
+  // The data lake and the software library are separate assets from the tool
+  // modules, and each has its own advertised-vs-actual gap. Reported apart from
+  // the function counts because that is what they are: a machine can have every
+  // module importable and no data lake at all.
+  const dataLake = report.dataLake
+  if (dataLake !== undefined) {
+    lines.push('')
+    if (!dataLake.exists) {
+      lines.push(`Data lake    not found at ${dataLake.path}`)
+      lines.push(`             ${dataLake.advertised} datasets are advertised and none are downloaded.`)
+      lines.push('             Point the `dataPath` setting at the root holding biomni_data/.')
+    } else {
+      lines.push(`Data lake    ${dataLake.present}/${dataLake.advertised} datasets at ${dataLake.path}`)
+      if (dataLake.restricted > 0) {
+        lines.push(`             ${dataLake.restricted} of those are licensed for non-commercial use only.`)
+      }
+    }
+  }
+
+  const libraries = Object.entries(report.libraries ?? {})
+  if (libraries.length > 0) {
+    const total = libraries.reduce((sum, [, tally]) => sum + tally.advertised, 0)
+    const available = libraries.reduce((sum, [, tally]) => sum + tally.available, 0)
+    lines.push('')
+    lines.push(`Software     ${available}/${total} of Biomni's packages and CLI tools installed`)
+    for (const [kind, tally] of libraries.sort(([a], [b]) => a.localeCompare(b))) {
+      const unverified = tally.unverified > 0 ? `, ${tally.unverified} unverified` : ''
+      lines.push(`  ${kind.padEnd(20)} ${tally.available}/${tally.advertised}${unverified}`)
+    }
   }
 
   lines.push('')

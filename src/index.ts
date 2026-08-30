@@ -7,7 +7,9 @@
  * steps instead of re-running one large script — the execution model Biomni's
  * agent depends on, reproduced as a dsh plugin rather than as a fork.
  *
- * Around that kernel:
+ * Around that kernel, three generated skill catalogs — the tool modules, the
+ * data lake, and the installed bioinformatics software — each advertising only
+ * what this machine can actually deliver, and:
  * - a system-prompt section and a bash guard, which together are what make the
  *   model actually USE the interpreter (both were needed; see prompt.ts and
  *   guard.ts for the measurements),
@@ -79,6 +81,7 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     get python() { return scope.get().python },
     get timeoutMs() { return scope.get().timeoutMs },
     get guardShellPython() { return scope.get().guardShellPython },
+    get dataPath() { return scope.get().dataPath },
   }
 
   // The in-process face the fenced routes call. `describe()` is the seam's own
@@ -101,16 +104,25 @@ export function apply(ctx: Context, config: BiomniConfig): void {
   // ── The interpreter pool ─────────────────────────────────────────────────
   const workers = pythonWorkers(ctx, live)
 
-  // Things that must react to a changed interpreter. A running worker keeps the
-  // executable it was started with, and a skill catalog generated from a
-  // different interpreter is not stale but wrong, so both are retired.
-  const onPythonChanged = new Set<() => void>()
+  // Things that must react to a changed environment. A running worker keeps the
+  // executable it was started with, and a catalog generated against a different
+  // interpreter or data root is not stale but wrong, so both are retired.
+  //
+  // The two settings differ in blast radius: `python` changes what the worker
+  // IS, so live interpreters go too; `dataPath` only changes which datasets the
+  // catalog can see, and retiring a session's namespace over it would throw
+  // away the user's work for nothing.
+  const onCatalogChanged = new Set<() => void>()
   let currentPython = live.python
+  let currentDataPath = live.dataPath
   scope.watch((next) => {
-    if (next.python === currentPython) return
+    const pythonChanged = next.python !== currentPython
+    const dataPathChanged = next.dataPath !== currentDataPath
+    if (!pythonChanged && !dataPathChanged) return
     currentPython = next.python
-    void workers.resetAll()
-    for (const react of onPythonChanged) react()
+    currentDataPath = next.dataPath
+    if (pythonChanged) void workers.resetAll()
+    for (const react of onCatalogChanged) react()
   })
 
   // ── Model-facing surfaces ────────────────────────────────────────────────
@@ -125,7 +137,7 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     }))
   }
 
-  ctx.effect(() => ctx.tools.guard(shellPythonGuard(() => live.guardShellPython)))
+  ctx.effect(() => ctx.tools.guard(shellPythonGuard(() => live.guardShellPython, () => live.python)))
   ctx.effect(() => ctx.tools.register(runPythonTool(workers, live, config.description)))
 
   // ── The /biomni command ──────────────────────────────────────────────────
@@ -135,7 +147,7 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     recordInput: false,
     handler: async (invocation) => {
       try {
-        const report = await probeEnvironment(ctx, live.python, invocation.signal)
+        const report = await probeEnvironment(ctx, live.python, live.dataPath, invocation.signal)
         return { kind: 'success', text: renderReport(report, live) }
       } catch (cause) {
         return {
@@ -150,7 +162,7 @@ export function apply(ctx: Context, config: BiomniConfig): void {
   const api = buildApi({
     settings: () => settingsFace,
     python: () => live.python,
-    probe: python => probeEnvironment(ctx, python),
+    probe: python => probeEnvironment(ctx, python, live.dataPath),
   })
 
   // ── The skill catalog ────────────────────────────────────────────────────
@@ -164,16 +176,17 @@ export function apply(ctx: Context, config: BiomniConfig): void {
       const provider = createBiomniSkillProvider({
         subprocess: ctx.subprocess,
         python: () => live.python,
+        dataPath: () => live.dataPath,
         onError: (error) => {
           // Discovery failing is worth saying once; it must not be silent, and
           // it must not be fatal.
           sctx.logger.warn(`skill catalog unavailable: ${String((error as Error | undefined)?.message ?? error)}`)
         },
       }, control)
-      onPythonChanged.add(provider.invalidate)
+      onCatalogChanged.add(provider.invalidate)
       return provider
     }), 'dsh-biomni: skill provider')
-    sctx.effect(() => () => { onPythonChanged.clear() })
+    sctx.effect(() => () => { onCatalogChanged.clear() })
   })
 
   // Mounted from a child fiber so a deployment without a web server (headless)

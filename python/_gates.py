@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Static analysis of Biomni's two dependency gates, shared by probe.py and skills.py.
+"""What this environment can ACTUALLY do with Biomni, shared by probe.py and skills.py.
 
-Biomni declares three dependencies and needs far more. What it actually needs
-hides behind two independent mechanisms:
+Biomni advertises three kinds of asset, and every one of them can be advertised
+without being usable here. Each is checked on its own axis, and the axes are
+never merged into a single "availability" number:
 
-  gate 1  module-level imports  -> whether a tool module imports AT ALL
-  gate 2  imports inside function bodies -> whether an individual function runs
+  tool functions   gate 1  module-level imports  -> does the module import AT ALL
+                   gate 2  imports inside bodies -> does the individual function run
+  data lake        is the advertised file actually on disk under the data root
+                   (and, independently, does its licence permit commercial use)
+  software library is the advertised package or CLI actually installed
 
 Gate 1 is all-or-nothing per module. Gate 2 is invisible to any module-level
 check: a module that imports cleanly can still have functions that raise
-ModuleNotFoundError when called.
+ModuleNotFoundError when called. Presence on disk is invisible to both.
 
-Both consumers need the same verdicts — the environment report and the skill
-catalog would be a bug factory if they could disagree about what is callable —
-so the analysis lives here once.
+Merging any of these into one number is the single mistake that matters here.
+An agent that meets an advertised-but-absent thing does not report the gap: it
+quietly invents a substitute — a hand-rolled function, or a plausible file path
+and a plausible result — and the answer looks fine and is not.
+
+Both consumers need identical verdicts — the environment report and the skill
+catalog would be a bug factory if they could disagree — so the analysis lives
+here once.
 
 Nothing is imported, only parsed: the probe stays fast and free of side
 effects, and a module whose import would crash still gets reported instead of
@@ -22,12 +31,16 @@ taking the caller down.
 
 import ast
 import importlib.util
+import os
 import pathlib
 import sys
 
 __all__ = [
     "analyze_modules",
     "biomni_version",
+    "data_lake_dir",
+    "data_lake_entries",
+    "library_entries",
     "spec_exists",
     "stdlib_names",
     "tool_dir",
@@ -140,3 +153,215 @@ def analyze_modules():
         })
 
     return modules
+
+
+# ── The data lake and the software library ──────────────────────────────────
+# Biomni's other two assets live in `biomni/env_desc.py` as two plain dicts:
+# `data_lake_dict` (76 datasets) and `library_content_dict` (113 packages and
+# CLI tools). Neither is reachable through `biomni.tool`, and both are read the
+# same way the tool descriptions are — parsed and literal-evaluated, never
+# executed.
+#
+# The same discipline applies as for functions, because the failure mode is the
+# same and worse: a model told about a dataset that is not on disk does not
+# report the gap, it invents a path and then invents a result. So each entry
+# carries what is ADVERTISED and what is ACTUALLY THERE as separate facts.
+#
+# Datasets carry a third, independent axis: `env_desc_cm.py` is the
+# commercial-use subset (41 of 76). Absence from it is a LICENCE restriction,
+# not a technical one — a dataset can be present on disk, callable, and still
+# not usable in a commercial context. Merging that into "available" would be
+# the same mistake as merging the two import gates.
+
+#: Where the data lake sits under the configured root, as Biomni lays it out
+#: (`biomni/agent/a1.py`: `os.path.join(path, "biomni_data", "data_lake")`).
+DATA_LAKE_SUBPATH = ("biomni_data", "data_lake")
+
+#: How Biomni's library descriptions tag an entry's kind.
+_KIND_PREFIXES = {
+    "[Python Package]": "python",
+    "[R Package]": "r",
+    "[CLI Tool]": "cli",
+}
+
+
+def _literal_dicts(path):
+    """Every top-level `name = {...}` literal in a module, without importing it."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError):
+        return {}
+    out = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name):
+                continue
+            try:
+                value = ast.literal_eval(node.value)
+            except (ValueError, SyntaxError):
+                continue
+            if isinstance(value, dict):
+                out[target.id] = value
+    return out
+
+
+def _biomni_root():
+    """The installed `biomni` package directory, or None when absent."""
+    spec = importlib.util.find_spec("biomni") if spec_exists("biomni") else None
+    if spec is None or not spec.submodule_search_locations:
+        return None
+    return pathlib.Path(list(spec.submodule_search_locations)[0])
+
+
+def _env_desc():
+    """(full, commercial) descriptor dicts, each possibly empty."""
+    root = _biomni_root()
+    if root is None:
+        return {}, {}
+    return _literal_dicts(root / "env_desc.py"), _literal_dicts(root / "env_desc_cm.py")
+
+
+def data_lake_dir(explicit=None):
+    """Resolve the data lake directory.
+
+    Precedence matches Biomni's own (`biomni/config.py`): an explicit setting,
+    then `BIOMNI_PATH` / `BIOMNI_DATA_PATH`, then `./data`. Always returned
+    absolute — the catalog builder and the session worker run from different
+    working directories, so a relative path would resolve to two places.
+    """
+    base = explicit or os.environ.get("BIOMNI_PATH") or os.environ.get("BIOMNI_DATA_PATH") or "./data"
+    return pathlib.Path(base).expanduser().resolve().joinpath(*DATA_LAKE_SUBPATH)
+
+
+def data_lake_entries(explicit=None):
+    """Advertised datasets joined with what is actually on disk.
+
+    Returns ``{"path": str, "exists": bool, "present": int, "entries": [...]}``
+    where each entry is::
+
+        name        the file name Biomni advertises
+        description Biomni's own one-line description
+        present     whether that file exists under the resolved directory
+        bytes       its size when present, else None
+        commercial  True/False per env_desc_cm, None when that file is absent
+
+    An empty ``entries`` means biomni is absent or ships no descriptors; that is
+    an answer, not a failure.
+    """
+    directory = data_lake_dir(explicit)
+    full, commercial = _env_desc()
+    advertised = full.get("data_lake_dict", {})
+    allowed = commercial.get("data_lake_dict")
+
+    entries = []
+    for name in sorted(advertised):
+        path = directory / name
+        try:
+            size = path.stat().st_size if path.is_file() else None
+        except OSError:
+            size = None
+        entries.append({
+            "name": name,
+            "description": str(advertised[name]),
+            "present": size is not None,
+            "bytes": size,
+            "commercial": None if allowed is None else name in allowed,
+        })
+
+    return {
+        "path": str(directory),
+        "exists": directory.is_dir(),
+        "present": sum(1 for entry in entries if entry["present"]),
+        "entries": entries,
+    }
+
+
+def _distribution_installed(name):
+    """Whether a distribution by this name is installed."""
+    try:
+        from importlib.metadata import PackageNotFoundError, distribution
+
+        try:
+            distribution(name)
+            return True
+        except PackageNotFoundError:
+            return False
+    except Exception:  # noqa: BLE001 - absence is the answer, not a crash
+        return False
+
+
+def _python_available(name):
+    """A package counts as present if pip knows it or its module can be located.
+
+    Both are needed: Biomni keys this dict by DISTRIBUTION name, which is often
+    not the import name (`biopython` imports as `Bio`), while a few entries name
+    the module instead.
+    """
+    return _distribution_installed(name) or spec_exists(name.replace("-", "_"))
+
+
+def library_entries():
+    """Advertised software joined with what this environment actually has.
+
+    Returns a list of dicts, sorted by name::
+
+        name        as Biomni names it
+        kind        'python' | 'r' | 'cli' | 'unknown' (from the description tag)
+        found       'python' | 'cli' | None — how it was actually located
+        description Biomni's description, tag stripped
+        available   True / False / None, where None means genuinely unverified
+
+    ``available`` is None only for R packages on a machine that HAS R: checking
+    them means starting an R process per package, which a catalog build has no
+    business doing. Saying "unverified" is the honest answer; claiming either
+    way would be a guess.
+    """
+    import shutil
+
+    full, _ = _env_desc()
+    advertised = full.get("library_content_dict", {})
+    has_r = shutil.which("Rscript") is not None
+
+    entries = []
+    for name in sorted(advertised, key=str.lower):
+        raw = str(advertised[name])
+        kind = "unknown"
+        description = raw
+        for prefix, tag in _KIND_PREFIXES.items():
+            if raw.startswith(prefix):
+                kind = tag
+                description = raw[len(prefix):].strip()
+                break
+
+        found = None
+        if kind == "python":
+            available = _python_available(name)
+            found = "python" if available else None
+        elif kind == "cli":
+            available = shutil.which(name) is not None
+            found = "cli" if available else None
+        elif kind == "r":
+            # No R at all is a definite no; with R present, per-package checks
+            # would cost a process each, so the answer stays unverified.
+            available = False if not has_r else None
+        else:
+            # Untagged entries are a mix of packages and binaries, so both are
+            # tried and whichever hits decides the kind that gets reported.
+            if _python_available(name):
+                available, found = True, "python"
+            elif shutil.which(name) is not None:
+                available, found = True, "cli"
+            else:
+                available = False
+
+        entries.append({
+            "name": name,
+            "kind": kind,
+            "found": found,
+            "description": description,
+            "available": available,
+        })
+
+    return entries

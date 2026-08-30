@@ -13,6 +13,7 @@
 import z from '@deepseek-ai/schemastery'
 import {
   clampTimeoutMs,
+  DATA_PATH_DEFAULT,
   PYTHON_DEFAULT,
   TIMEOUT_MS_DEFAULT,
   TIMEOUT_MS_MAX,
@@ -39,6 +40,9 @@ export const PrefsSchema: z<BiomniPrefs> = z.object({
   guardShellPython: z.boolean()
     .default(true)
     .description('Deny bash commands that invoke python or pip, redirecting them to run_python.'),
+  dataPath: z.string()
+    .default(DATA_PATH_DEFAULT)
+    .description('Root holding biomni_data/data_lake. Empty follows Biomni: $BIOMNI_PATH, $BIOMNI_DATA_PATH, then ./data.'),
 }) as unknown as z<BiomniPrefs>
 
 /** The composition row. */
@@ -58,6 +62,9 @@ export const Config = z.object({
   guardShellPython: z.boolean()
     .default(true)
     .description('Deny bash commands that invoke python or pip directly, redirecting them to run_python.'),
+  dataPath: z.string()
+    .default(DATA_PATH_DEFAULT)
+    .description('Root holding biomni_data/data_lake; empty resolves as Biomni does.'),
 })
 
 /** The resolved composition row. */
@@ -67,6 +74,7 @@ export interface BiomniConfig {
   description: string
   guidance: string
   guardShellPython: boolean
+  dataPath: string
 }
 
 /**
@@ -79,5 +87,6 @@ export function prefsBaseOf(config: BiomniConfig): BiomniPrefs {
     python: config.python,
     timeoutMs: clampTimeoutMs(config.timeoutMs),
     guardShellPython: config.guardShellPython,
+    dataPath: config.dataPath,
   }
 }

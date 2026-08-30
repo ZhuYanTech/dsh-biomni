@@ -33,6 +33,17 @@ export interface BiomniPrefs {
    * the library.
    */
   guardShellPython: boolean
+  /**
+   * Root of Biomni's data lake, i.e. the directory that CONTAINS
+   * `biomni_data/data_lake` — the same value Biomni itself calls `path`.
+   * Empty means resolve it the way Biomni does: `$BIOMNI_PATH`, then
+   * `$BIOMNI_DATA_PATH`, then `./data`.
+   *
+   * Changing it invalidates the skill catalog for the same reason changing
+   * `python` does: a data lake listing generated against another root is not
+   * stale, it is wrong.
+   */
+  dataPath: string
 }
 
 /** Range contract of {@link BiomniPrefs.timeoutMs}. */
@@ -43,11 +54,15 @@ export const TIMEOUT_MS_DEFAULT = 600_000
 /** Fallback interpreter when nothing better is configured. */
 export const PYTHON_DEFAULT = 'python3'
 
+/** Empty data root: resolve as Biomni does, inside Python where the env is visible. */
+export const DATA_PATH_DEFAULT = ''
+
 /** Fallback prefs used whenever the settings document is unreachable or malformed. */
 export const BIOMNI_PREFS_DEFAULTS: BiomniPrefs = {
   python: PYTHON_DEFAULT,
   timeoutMs: TIMEOUT_MS_DEFAULT,
   guardShellPython: true,
+  dataPath: DATA_PATH_DEFAULT,
 }
 
 /** Clamp one snippet timeout into the contract range (shared by schema and client reads). */
@@ -73,6 +88,32 @@ export interface ProbeModule {
   blocked: number
 }
 
+/** The data lake as the probe tallied it. */
+export interface ProbeDataLake {
+  /** Absolute directory the probe looked in, after resolving the root. */
+  path: string
+  /** Whether that directory exists at all. */
+  exists: boolean
+  /** How many datasets Biomni advertises (76 at 0.0.8). */
+  advertised: number
+  /** How many of them are actually files on disk. */
+  present: number
+  /**
+   * How many of the PRESENT ones are absent from Biomni's commercial-use
+   * subset. This is a licence restriction, tracked separately from presence:
+   * a dataset can be downloaded, readable, and still not usable commercially.
+   */
+  restricted: number
+}
+
+/** One kind of advertised software, tallied. */
+export interface ProbeLibraryTally {
+  advertised: number
+  available: number
+  /** R packages on a machine that has R: checking each would cost a process. */
+  unverified: number
+}
+
 /** The probe's whole report. */
 export interface ProbeReport {
   /** `sys.executable` of the probed interpreter. */
@@ -95,6 +136,10 @@ export interface ProbeReport {
    * import error names neither, which is why they are called out separately.
    */
   gate?: string[]
+  /** The data lake tally; absent when biomni itself is. */
+  dataLake?: ProbeDataLake
+  /** Software tallies keyed by kind (`python` / `cli` / `r` / `unknown`). */
+  libraries?: Record<string, ProbeLibraryTally>
   /** Set instead of the survey when the probe itself failed. */
   error?: string
 }

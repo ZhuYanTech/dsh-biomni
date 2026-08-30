@@ -20,8 +20,8 @@
 |---|---|---|
 | 系统提示词分区 | 声明解释器的存在和模块清单 | 只注册工具不够——实测模型会直接去用 bash |
 | `bash` 守卫 | 拒绝 shell 里直接调用 `python` / `pip` | 提示词只能纠正**第一次**选择，任务中途模型仍会回退 |
-| **skill 目录** | 每个工具模块一个 skill，带真实签名；外加一个手写的 `biomni-workflow` | 218 个函数的 schema 塞不进上下文——这是 Biomni 用 `ToolRetriever` 解决的问题 |
-| 环境探针 | `/biomni` 命令 + 设置页 | 「模块能 import」和「函数能调用」是两个不同的数字 |
+| **skill 目录** | 每个工具模块一个 skill，带真实签名；数据湖和软件库各一个；外加一个手写的 `biomni-workflow` | 218 个函数的 schema 塞不进上下文——这是 Biomni 用 `ToolRetriever` 解决的问题 |
+| 环境探针 | `/biomni` 命令 + 设置页 | 「广告过的」和「真的能用的」从来不是一个数字 |
 
 ---
 
@@ -33,6 +33,8 @@ Biomni 的内核是三样东西，只有前两样值得复现：
 |---|---|---|
 | `run_python_repl` | 一个跨 agent 回合持久的解释器命名空间 | `run_python` 工具 |
 | `biomni/tool/*.py` | 21 个模块 218 个领域函数，MIT 协议 | 在那个解释器里作为普通库复用 |
+| `env_desc.data_lake_dict` | 76 个已清洗的生物医学数据集 | **`biomni-data-lake` skill**——只列这台机器上真有的 |
+| `env_desc.library_content_dict` | 113 条生信软件（Python 包 / CLI / R 包） | **`biomni-software` skill**——只列这台机器上真装了的 |
 | `ToolRetriever` | 按 prompt 检索相关工具子集，因为 200+ 个 schema 塞不进上下文 | **DSH skill 目录**——见下节 |
 | `<execute>` / `<solution>` 标签 | 早于可靠 function calling 的文本协议 | **不复现**——dsh 有原生工具调用 |
 
@@ -328,9 +330,13 @@ client bundle 禁止 value-import 非白名单的 `@deepseek-ai/*`（`tsdown.con
 
 ## 状态
 
-执行内核、设置页、环境探针和 skill 目录都可用并有测试覆盖 —— Biomni 内核的三块（持久解释器、工具库、检索层）现在都有了对应物。
+执行内核、设置页、环境探针和三份 skill 目录（工具模块 / 数据湖 / 软件库）都可用并有测试覆盖。Biomni 值得复现的部分现在都有了对应物。
 
-还没做的：数据湖（76 个数据集，需要额外下载约 11GB，本插件目前不管这件事）和软件库（113 条）的目录，两者的元数据都在 `biomni.env_desc` 里现成可读。
+**已知边界，写在这里而不是藏起来：**
+
+- **数据湖本身的下载不归本插件管。** 76 个数据集约 11GB，要用 Biomni 自己的下载流程或手工放好；本插件只负责如实报告哪些真的在盘上，并把路径交给模型。没下载 = 没有 `biomni-data-lake` skill，这是确定的答案，不是失败。
+- **R 包无法逐个验证。** 机器上没有 R 时是确定的「没有」；有 R 时逐包检查要各起一个 R 进程，一次目录构建不该干这事，所以标成 unverified。这是诚实的答案，猜哪一边都是编。
+- **shell 守卫无法做到完备。** 它现在覆盖 `uv run` / `conda run` / `poetry run` 等一批包装形式，但枚举永远追不上。真正的兜底是另一条：**用绝对路径写出本会话解释器的调用会被放行**——那条路到达的是对的库、对的 Python，只是丢掉持久命名空间，是降级而不是错误。更彻底的做法是让 bash 的 PATH 直接指向那个 venv，但 DSH 没有给插件设置 bash 环境的接口，而本项目不改 harness 源码。
 
 ## 许可
 

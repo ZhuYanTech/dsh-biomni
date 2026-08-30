@@ -20,8 +20,8 @@ Three things sit around that tool, and none is optional:
 |---|---|---|
 | System-prompt section | Declares the interpreter and the module inventory | Registering the tool is not enough — measured: the model reaches for bash |
 | `bash` guard | Denies shell invocations of `python` / `pip` | The prompt fixes only the FIRST choice; mid-task the model still falls back |
-| **Skill catalog** | One skill per tool module, carrying real signatures | 218 function schemas do not fit in context — the problem Biomni built `ToolRetriever` for |
-| Environment probe | The `/biomni` command + the Settings page | "module imports" and "function is callable" are two different numbers |
+| **Skill catalog** | One skill per tool module, carrying real signatures; one each for the data lake and the installed software | 218 function schemas do not fit in context — the problem Biomni built `ToolRetriever` for |
+| Environment probe | The `/biomni` command + the Settings page | "advertised" and "actually usable here" are never the same number |
 
 ---
 
@@ -33,6 +33,8 @@ Biomni's kernel is three things, and only the first two are worth reproducing:
 |---|---|---|
 | `run_python_repl` | one interpreter whose namespace persists across the agent's turns | the `run_python` tool |
 | `biomni/tool/*.py` | 218 domain functions across 21 modules, MIT licensed | reused as ordinary libraries inside that interpreter |
+| `env_desc.data_lake_dict` | 76 cleaned biomedical datasets | the **`biomni-data-lake` skill** — listing only what is really on this machine |
+| `env_desc.library_content_dict` | 113 bioinformatics packages and CLI tools | the **`biomni-software` skill** — listing only what is really installed |
 | `ToolRetriever` | picks a relevant subset of tools for the prompt, because 200+ schemas do not fit context | **the DSH skill catalog** — see below |
 | `<execute>` / `<solution>` tags | a text protocol that pre-dates reliable function calling | **not** reproduced — dsh has native tool calling |
 
@@ -271,9 +273,13 @@ The client bundle may not value-import non-allowlisted `@deepseek-ai/*` packages
 
 ## Status
 
-The execution kernel, the Settings page, the environment probe, and the skill catalog all work and are covered by tests — all three parts of Biomni's kernel (persistent interpreter, tool library, retrieval layer) now have a counterpart.
+The execution kernel, the Settings page, the environment probe, and all three skill catalogs (tool modules / data lake / software library) work and are covered by tests. Everything in Biomni worth reproducing now has a counterpart.
 
-Not done yet: catalogs for the data lake (76 datasets, needing a separate ~11 GB download this plugin does not manage) and the software library (113 entries). Both are readable from `biomni.env_desc`.
+**Known limits, stated rather than hidden:**
+
+- **Downloading the data lake is not this plugin's job.** The 76 datasets are ~11 GB and have to arrive through Biomni's own download flow or by hand; this plugin only reports honestly which of them are on disk and hands the model their paths. Nothing downloaded means no `biomni-data-lake` skill — a definite answer, not a failure.
+- **R packages cannot be verified individually.** With no R on the machine the answer is a definite no; with R present, checking each package would cost one R process per entry, which a catalog build has no business doing, so they are marked unverified. Guessing either way would be inventing.
+- **The shell guard cannot be complete.** It now covers `uv run`, `conda run`, `poetry run` and the rest of that family, but enumeration never catches up. The real backstop is the other rule: **an invocation that names this session's interpreter by absolute path is allowed through** — it reaches the right library and the right Python, losing only the persistent namespace, which is a degraded result rather than a wrong one. The thorough fix would be putting that venv first on the bash tool's PATH, but DSH exposes no seam for a plugin to set the bash tool's environment, and this project does not patch the harness.
 
 ## License
 

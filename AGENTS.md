@@ -43,20 +43,25 @@ host:   ctx.settings.register(ns, PrefsSchema)     ← 进程内持有，无 all
 | 层 | 放什么 | 为什么 |
 |---|---|---|
 | 组合行（`Config`，`cordis.patch.yml`） | `description`、`guidance` | 文本挂在请求前缀上，会话中途改会让 KV 缓存失效 |
-| 用户设置（`PrefsSchema`，`biomni` namespace） | `python`、`timeoutMs`、`guardShellPython` | 路径和限额，改了要立即生效 |
+| 用户设置（`PrefsSchema`，`biomni` namespace） | `python`、`timeoutMs`、`guardShellPython`、`dataPath` | 路径和限额，改了要立即生效 |
 
 用户设置**必须按访问解析**（`scope.get()` 放在 getter 里），不能在 `apply` 里读一次存下来——否则「改了立即生效」就是假的。
 
 `python` 变更还要 `workers.resetAll()`：已经在跑的解释器保留它出生时的可执行文件，不退役就等于没改。
 
-## 4. 探针的两道门，不要合并成一个数字
+## 4. 所有的门都不要合并成一个数字
 
-`python/probe.py` 静态扫描 Biomni 的两道依赖门：
+Biomni 广告三类资产，每一类都可能「广告了但这里用不了」。`python/_gates.py` 分轴静态扫描：
 
-- **门 1**：模块级 import → 模块能不能 import（全有或全无）
-- **门 2**：函数体内的惰性 import → 函数能不能调用
+| 资产 | 轴 |
+|---|---|
+| 工具函数 | **门 1** 模块级 import → 模块能不能 import（全有或全无）<br>**门 2** 函数体内的惰性 import → 函数能不能调用 |
+| 数据湖 | 广告的文件是否真在盘上；**另外独立一轴**：许可是否允许商用（`env_desc_cm.py`，76 里只有 41） |
+| 软件库 | 广告的包 / CLI 是否真的装了（`importlib.metadata` / `shutil.which`） |
 
-**这两个数字必须分开呈现。** 把它们合并成一个「可用度」是这个 UI 唯一真正会犯的错：一个模块能干净导入，它的函数照样可能在调用时抛 `ModuleNotFoundError`，而 agent 遇到这种情况会**默默手搓一个替代实现**，产出看起来没问题、却不来自被验证工具的答案。
+**任何两轴都不许合并成一个「可用度」。** 这是这个项目唯一真正会犯的错。一个模块能干净导入，函数照样可能在调用时抛 `ModuleNotFoundError`；一个数据集可以在盘上、可读、并且仍然不许商用。agent 遇到这种落差**不会报告它，会默默编一个**——手搓一个替代函数，或者编一个路径再编一个结果，产出看起来没问题、却不来自被验证的东西。
+
+R 包是唯一允许 `available: null` 的：机器上没有 R 是确定的「没有」，有 R 时逐包检查要各起一个进程，一次目录构建不该干这事。**标 unverified，不要猜。**
 
 `report.gate`（`tqdm` / `pandas`）要单独最响地报出来：它俩通过 `biomni.tool.__init__ → biomni.utils` 一次性卡住全部模块，而且报错不提它们。
 
@@ -66,11 +71,26 @@ skill 是**运行时**从配置的解释器生成的（`python/skills.py`），�
 
 1. **目录只登可用的东西。** 门 1 挡住的模块不进目录（底下没一个函数能跑）；门 2 挡住的函数不进「可用」列表。改 `advertisableModules` / `isCallable` 时想清楚：目录里出现一个调不通的函数，就是在制造那个「agent 默默手搓替代品」的场景。
 2. **被挡住的函数要点名，不要藏。** body 末尾那段「needs `X`，报告它，不要自己装也不要重新实现」是反造假指令，`tests/skills.spec.ts` 钉着。完全隐藏会让模型靠「调用→失败」重新发现，而实测的失败反应不是干净报错。
-3. **`python` 一变就 invalidate。** 从另一个解释器生成的目录不是陈旧，是错的。`index.ts` 里 `onPythonChanged` 这条线不能断。
+3. **`python` 或 `dataPath` 一变就 invalidate。** 从另一个解释器、或另一个数据根目录生成的目录不是陈旧，是错的。`index.ts` 里 `onCatalogChanged` 这条线不能断，provider 的缓存键必须同时含这两个值。注意两者的爆炸半径不同：`python` 变了要连带 `workers.resetAll()`，`dataPath` 变了**不能**——那会白白丢掉用户会话里的命名空间。
+4. **数据湖和软件库各只占目录一行。** 76 个数据集、113 条软件如果一条一个 skill，常驻成本会超过它们旁边的模块目录。分组进一个 body，按需加载。
+5. **盘上没有就不登。** 一个数据集都没下载 → 没有 `biomni-data-lake` skill。列 76 个不存在的路径，正是第 1 条要防的事，而且在这里更危险。
 
 skill 名必须是 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`），而 Biomni 的模块名是 snake_case —— `skillNameOf()` 负责转换，别绕过它。
 
-**两道门的分析只有一份实现**（`python/_gates.py`），`probe.py` 和 `skills.py` 都用它。设置页和 skill 目录对「什么能调用」给出两种说法，是这里最容易犯也最难查的错。`tests/biomni.spec.ts` 有一条专门比对两者的用例。
+**全部三类资产的分析只有一份实现**（`python/_gates.py`），`probe.py` 和 `skills.py` 都用它。设置页和 skill 目录对「什么能用」给出两种说法，是这里最容易犯也最难查的错。`tests/biomni.spec.ts` 有专门比对两者的用例（函数、数据湖、软件库各一条）。
+
+## 4d. shell 守卫：守的是「对的解释器」，不是「没有 Python」
+
+`src/guard.ts` 现在按这条不变量写，别退回去：
+
+- 到达**别的**解释器 → 拒绝，并且拒绝理由里要点名该用哪个；
+- 用**绝对路径**写出本会话配置的那个解释器 → **放行**。它到达对的库、对的 Python，只丢掉持久命名空间——降级，不是错误。
+
+这条放行是整个设计的兜底：正则永远枚举不完（`uv run` / `conda run` / `poetry run` / Makefile / shell 脚本…），有了它，漏掉一个模式就不再是正确性事故。**加新的包装形式往 `WRAPPERS` 里加，但不要指望它完备。**
+
+两条例外，别放宽：`pip` 在任何路径下都不放行（装包要走 operator）；配置成裸 `python3` 时不放行任何东西（那时「配置的解释器」就是要防的那个系统解释器）。
+
+Biomni 软件库里那 18 个 CLI（samtools / bwa / bedtools…）**本来就该走 bash**，守卫只认 `python` / `pip`，别把它们卷进来。
 
 ## 4c. 两种安装形态的分工，以及一条硬约束
 

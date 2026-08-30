@@ -41,6 +41,11 @@ export function parsePrefs(value: unknown): BiomniPrefs {
     guardShellPython: typeof record.guardShellPython === 'boolean'
       ? record.guardShellPython
       : BIOMNI_PREFS_DEFAULTS.guardShellPython,
+    // Empty is a MEANINGFUL value here (resolve as Biomni does), so unlike
+    // `python` it is not treated as absent and replaced by the default.
+    dataPath: typeof record.dataPath === 'string'
+      ? record.dataPath
+      : BIOMNI_PREFS_DEFAULTS.dataPath,
   }
 }
 

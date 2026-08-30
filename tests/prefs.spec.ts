@@ -15,8 +15,17 @@ describe('parsePrefs', () => {
   })
 
   it('adopts well-formed values', () => {
-    expect(parsePrefs({ python: '/venv/bin/python', timeoutMs: 30_000, guardShellPython: false }))
-      .toEqual({ python: '/venv/bin/python', timeoutMs: 30_000, guardShellPython: false })
+    expect(parsePrefs({
+      python: '/venv/bin/python',
+      timeoutMs: 30_000,
+      guardShellPython: false,
+      dataPath: '/data/bio',
+    })).toEqual({
+      python: '/venv/bin/python',
+      timeoutMs: 30_000,
+      guardShellPython: false,
+      dataPath: '/data/bio',
+    })
   })
 
   it('falls back per field, not wholesale', () => {
@@ -26,12 +35,22 @@ describe('parsePrefs', () => {
         python: '/venv/bin/python',
         timeoutMs: BIOMNI_PREFS_DEFAULTS.timeoutMs,
         guardShellPython: BIOMNI_PREFS_DEFAULTS.guardShellPython,
+        dataPath: BIOMNI_PREFS_DEFAULTS.dataPath,
       })
   })
 
   it('rejects an empty interpreter path', () => {
     // An empty string would spawn nothing and fail per call with no clue why.
     expect(parsePrefs({ python: '   ' }).python).toBe(BIOMNI_PREFS_DEFAULTS.python)
+  })
+
+  it('keeps an empty data root, which is a meaningful value', () => {
+    // Unlike `python`, empty here is not absence: it means resolve the way
+    // Biomni does ($BIOMNI_PATH, $BIOMNI_DATA_PATH, ./data). Replacing it with
+    // a default would silently pin the lake to one root.
+    expect(parsePrefs({ dataPath: '' }).dataPath).toBe('')
+    expect(parsePrefs({ dataPath: '/data/bio' }).dataPath).toBe('/data/bio')
+    expect(parsePrefs({ dataPath: 42 }).dataPath).toBe(BIOMNI_PREFS_DEFAULTS.dataPath)
   })
 
   it('clamps a timeout outside the contract range', () => {

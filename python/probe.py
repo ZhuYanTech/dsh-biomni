@@ -4,10 +4,13 @@
 Answers the question that costs the most time when a tool call fails: is the
 library here, which modules import, and which functions would raise on call.
 
-The two-gate analysis itself lives in `_gates.py`, shared with `skills.py` so
-the environment report and the skill catalog can never disagree about what is
-callable. This script only aggregates those verdicts into counts and the
-missing-package histogram the report renders.
+The analysis itself lives in `_gates.py`, shared with `skills.py` so the
+environment report and the skill catalog can never disagree about what is
+available. This script only aggregates those verdicts into the counts, the
+missing-package histogram, and the data lake / software tallies the report
+renders.
+
+An optional argv[1] overrides the data lake root, as in skills.py.
 """
 
 import json
@@ -16,7 +19,36 @@ import sys
 import _gates
 
 
-def survey():
+def _data_lake(data_path):
+    """Counts only — the Settings page reports the tally, not 76 file names."""
+    survey = _gates.data_lake_entries(data_path)
+    entries = survey["entries"]
+    return {
+        "path": survey["path"],
+        "exists": survey["exists"],
+        "advertised": len(entries),
+        "present": survey["present"],
+        # Of what is actually on disk, how much carries a commercial-use
+        # restriction. Counted over present files because that is what a user
+        # can act on; a restricted dataset they never downloaded is not a risk.
+        "restricted": sum(1 for e in entries if e["present"] and e["commercial"] is False),
+    }
+
+
+def _libraries():
+    """Counts per kind, so the report can say what is missing without listing 113."""
+    tally = {}
+    for entry in _gates.library_entries():
+        bucket = tally.setdefault(entry["kind"], {"advertised": 0, "available": 0, "unverified": 0})
+        bucket["advertised"] += 1
+        if entry["available"] is True:
+            bucket["available"] += 1
+        elif entry["available"] is None:
+            bucket["unverified"] += 1
+    return tally
+
+
+def survey(data_path=None):
     report = {
         "executable": sys.executable,
         "python": sys.version.split()[0],
@@ -30,6 +62,9 @@ def survey():
     report["biomni"] = _gates.biomni_version()
     if report["biomni"] is None:
         return report
+
+    report["dataLake"] = _data_lake(data_path)
+    report["libraries"] = _libraries()
 
     missing = {}
     for module in _gates.analyze_modules():
@@ -58,6 +93,6 @@ def survey():
 
 if __name__ == "__main__":
     try:
-        print(json.dumps(survey()))
+        print(json.dumps(survey(sys.argv[1] if len(sys.argv) > 1 else None)))
     except Exception as exc:  # noqa: BLE001 - the caller renders this
         print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}))

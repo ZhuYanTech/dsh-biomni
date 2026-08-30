@@ -18,12 +18,21 @@ import type {
 } from '@deepseek-ai/dsh-skill'
 import {
   advertisableModules,
+  availableLibraries,
   isCallable,
+  presentDatasets,
   skillNameOf,
   type CatalogFunction,
   type SkillCatalog,
 } from '../src/skills/catalog.ts'
-import { describeModule, renderSkillBody } from '../src/skills/render.ts'
+import {
+  describeDataLake,
+  describeModule,
+  describeSoftware,
+  renderDataLakeBody,
+  renderSkillBody,
+  renderSoftwareBody,
+} from '../src/skills/render.ts'
 import { createBiomniSkillProvider, PROVIDER_NAME } from '../src/skills/provider.ts'
 import { loadStaticSkills } from '../src/skills/static.ts'
 
@@ -248,7 +257,7 @@ describe('the provider', () => {
   it('lists the shipped skills before the generated ones', async () => {
     const { service } = stubSubprocess(CATALOG)
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => '/venv/bin/python' },
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
       stubControl(),
     )
     const candidates = await candidatesOf(provider)
@@ -262,7 +271,7 @@ describe('the provider', () => {
     // How to organize the work does not depend on the interpreter.
     const { service } = stubSubprocess('', 1)
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => '/no/such/python', onError: () => {} },
+      { subprocess: service, python: () => '/no/such/python', dataPath: () => '', onError: () => {} },
       stubControl(),
     )
     const listed = await provider.list({})
@@ -274,7 +283,7 @@ describe('the provider', () => {
   it('loads a shipped skill body verbatim', async () => {
     const { service } = stubSubprocess(CATALOG)
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => '/venv/bin/python' },
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
       stubControl(),
     )
     const candidates = await candidatesOf(provider)
@@ -286,7 +295,7 @@ describe('the provider', () => {
   it('loads the body for a listed candidate', async () => {
     const { service } = stubSubprocess(CATALOG)
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => '/venv/bin/python' },
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
       stubControl(),
     )
     const candidates = await candidatesOf(provider)
@@ -299,7 +308,7 @@ describe('the provider', () => {
   it('spawns once and serves the rest from cache', async () => {
     const { service, spawns } = stubSubprocess(CATALOG)
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => '/venv/bin/python' },
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
       stubControl(),
     )
     await provider.list({})
@@ -314,7 +323,7 @@ describe('the provider', () => {
     let python = '/venv-a/bin/python'
     const control = stubControl()
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => python },
+      { subprocess: service, python: () => python, dataPath: () => '' },
       control,
     )
     await provider.list({})
@@ -331,7 +340,7 @@ describe('the provider', () => {
     // skills stay, because they do not depend on the interpreter.
     const { service } = stubSubprocess({ biomni: null, modules: [] })
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => 'python3' },
+      { subprocess: service, python: () => 'python3', dataPath: () => '' },
       stubControl(),
     )
     const listed = await provider.list({})
@@ -346,7 +355,7 @@ describe('the provider', () => {
     const onError = vi.fn()
     const { service } = stubSubprocess('', 1)
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => '/no/such/python', onError },
+      { subprocess: service, python: () => '/no/such/python', dataPath: () => '', onError },
       stubControl(),
     )
     const listed = await provider.list({}) as SkillProviderObservation
@@ -359,11 +368,212 @@ describe('the provider', () => {
     const onError = vi.fn()
     const { service } = stubSubprocess({ error: 'ValueError: nope' })
     const provider = createBiomniSkillProvider(
-      { subprocess: service, python: () => 'python3', onError },
+      { subprocess: service, python: () => 'python3', dataPath: () => '', onError },
       stubControl(),
     )
     const listed = await provider.list({}) as SkillProviderObservation
     expect(listed.complete).toBe(false)
     expect(onError).toHaveBeenCalledOnce()
+  })
+})
+
+// ── The data lake and the software library ──────────────────────────────────
+// Biomni's other two assets. The assertions here are the same honesty
+// assertions as above, aimed at a worse failure: a model told about a dataset
+// that is not on disk does not report the gap, it invents a path and then
+// invents a result to go with it.
+
+/** A catalog with both extra assets populated. */
+const RICH: SkillCatalog = {
+  ...CATALOG,
+  dataLake: {
+    path: '/data/biomni_data/data_lake',
+    exists: true,
+    present: 2,
+    entries: [
+      {
+        name: 'DepMap_Model.csv',
+        description: 'Metadata describing all cancer models/cell lines.',
+        present: true,
+        bytes: 4_194_304,
+        commercial: true,
+      },
+      {
+        name: 'gtex_tissue_gene_tpm.parquet',
+        description: 'Gene expression across GTEx tissues.',
+        present: true,
+        bytes: 1_073_741_824,
+        commercial: false,
+      },
+      {
+        name: 'txgnn_prediction.pkl',
+        description: 'Prediction data for TXGNN.',
+        present: false,
+        bytes: null,
+        commercial: true,
+      },
+    ],
+  },
+  libraries: [
+    { name: 'samtools', kind: 'cli', found: 'cli', description: 'Sequencing data tools.', available: true },
+    { name: 'scanpy', kind: 'python', found: 'python', description: 'Single-cell analysis.', available: true },
+    { name: 'bowtie2', kind: 'cli', found: null, description: 'Read aligner.', available: false },
+    { name: 'DESeq2', kind: 'r', found: null, description: 'Differential expression.', available: null },
+  ],
+}
+
+describe('the data lake skill', () => {
+  it('advertises only datasets that are actually on disk', () => {
+    const datasets = presentDatasets(RICH)
+    expect(datasets.map(entry => entry.name))
+      .toEqual(['DepMap_Model.csv', 'gtex_tissue_gene_tpm.parquet'])
+  })
+
+  it('offers nothing when the lake is absent', () => {
+    // A definite answer, not a failure — and the alternative, a body listing 76
+    // datasets none of which exist, is precisely the failure being prevented.
+    expect(presentDatasets(CATALOG)).toEqual([])
+    expect(presentDatasets({ ...RICH, dataLake: { ...RICH.dataLake!, entries: [] } })).toEqual([])
+  })
+
+  it('states the absolute root once and never a guessable path', () => {
+    const body = renderDataLakeBody(RICH.dataLake!, presentDatasets(RICH), '0.0.8')
+    expect(body).toContain('/data/biomni_data/data_lake')
+    expect(body).toContain('DepMap_Model.csv')
+    // The one file that is NOT downloaded must not appear as available.
+    const listing = body.slice(body.indexOf('## Datasets'))
+    expect(listing).not.toContain('txgnn_prediction.pkl')
+  })
+
+  it('names the licence restriction instead of folding it into availability', () => {
+    // Presence and licence are independent axes: this dataset is downloaded,
+    // readable, and still not usable commercially.
+    const body = renderDataLakeBody(RICH.dataLake!, presentDatasets(RICH), '0.0.8')
+    expect(body).toContain('non-commercial')
+    expect(body).toContain('gtex_tissue_gene_tpm.parquet')
+  })
+
+  it('tells the model to report a missing dataset rather than substitute one', () => {
+    const body = renderDataLakeBody(RICH.dataLake!, presentDatasets(RICH), '0.0.8')
+    expect(body).toMatch(/do NOT guess a path/i)
+  })
+
+  it('states the software composition rather than assuming it', () => {
+    // A machine with no CLI tools must not advertise "command-line tools", or
+    // the description routes the model to a skill that cannot answer.
+    expect(describeSoftware(availableLibraries(RICH))).toMatch(/1 command-line tool and 2 packages/)
+    const noCli = availableLibraries(RICH).filter(entry => entry.kind !== 'cli')
+    const description = describeSoftware(noCli)
+    expect(description).not.toMatch(/command-line/)
+    expect(description).toMatch(/2 packages/)
+  })
+
+  it('names datasets in the routing description, not just a subject', () => {
+    // The description is the only text that decides whether the skill is ever
+    // loaded, so it has to be distinguishable from every other row.
+    const description = describeDataLake(presentDatasets(RICH))
+    expect(description).toContain('DepMap_Model')
+    expect(description).toMatch(/2 biomedical datasets/)
+  })
+})
+
+describe('the software skill', () => {
+  it('drops what was verified absent and keeps what could not be verified', () => {
+    const available = availableLibraries(RICH)
+    expect(available.map(entry => entry.name)).toEqual(['samtools', 'scanpy', 'DESeq2'])
+  })
+
+  it('splits by how each thing is actually invoked', () => {
+    // The distinction the model gets wrong: a CLI tool is not importable, and
+    // a Python package is not runnable from the shell.
+    const body = renderSoftwareBody(availableLibraries(RICH), '0.0.8')
+    expect(body).toContain('Command-line tools')
+    expect(body).toContain('Python packages')
+    expect(body).toMatch(/bash/)
+    expect(body).not.toContain('bowtie2')
+  })
+
+  it('marks an unverified entry as unverified', () => {
+    const body = renderSoftwareBody(availableLibraries(RICH), '0.0.8')
+    expect(body).toMatch(/DESeq2.*unverified/)
+  })
+
+  it('says the guard does not apply to the CLI tools', () => {
+    // They run through bash, and a model that believes bash is off-limits will
+    // hand-roll an aligner instead of calling one.
+    const body = renderSoftwareBody(availableLibraries(RICH), '0.0.8')
+    expect(body).toMatch(/only blocks `python` and `pip`/)
+  })
+})
+
+describe('the provider, with both extra assets', () => {
+  it('advertises one row each, not one per entry', async () => {
+    // 76 datasets and 113 packages as separate catalog rows would cost more
+    // resident context than the module catalog they sit beside.
+    const { service } = stubSubprocess(RICH)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
+      stubControl(),
+    )
+    const candidates = await candidatesOf(provider)
+    expect(candidates.map(candidate => candidate.name)).toEqual([
+      'biomni-workflow',
+      'biomni-literature',
+      'biomni-molecular-biology',
+      'biomni-data-lake',
+      'biomni-software',
+    ])
+  })
+
+  it('omits the data lake row when nothing is downloaded', async () => {
+    const { service } = stubSubprocess({ ...RICH, dataLake: { ...RICH.dataLake!, present: 0, entries: [] } })
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
+      stubControl(),
+    )
+    const names = (await candidatesOf(provider)).map(candidate => candidate.name)
+    expect(names).not.toContain('biomni-data-lake')
+    expect(names).toContain('biomni-software')
+  })
+
+  it('serves the rendered bodies through get()', async () => {
+    const { service } = stubSubprocess(RICH)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
+      stubControl(),
+    )
+    const candidates = await candidatesOf(provider)
+    const lake = await provider.get(candidates.find(c => c.name === 'biomni-data-lake')!, {})
+    const software = await provider.get(candidates.find(c => c.name === 'biomni-software')!, {})
+    expect(lake!.content).toContain('/data/biomni_data/data_lake')
+    expect(software!.content).toContain('samtools')
+  })
+
+  it('rebuilds after the data root changes', async () => {
+    // Same reasoning as the interpreter: a dataset listing generated against
+    // another root is not stale, it is wrong.
+    const { service, spawns } = stubSubprocess(RICH)
+    let dataPath = '/data-a'
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => dataPath },
+      stubControl(),
+    )
+    await provider.list({})
+    dataPath = '/data-b'
+    provider.invalidate()
+    await provider.list({})
+    expect(spawns).toHaveLength(2)
+    expect(spawns[1]!).toContain('/data-b')
+  })
+
+  it('passes no data-root argument when the setting is empty', async () => {
+    // Empty must reach Biomni's own resolution, not be passed as the path ''.
+    const { service, spawns } = stubSubprocess(RICH)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => '/venv/bin/python', dataPath: () => '' },
+      stubControl(),
+    )
+    await provider.list({})
+    expect(spawns[0]!).toHaveLength(2)
   })
 })

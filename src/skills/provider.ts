@@ -25,12 +25,26 @@ import {
 import type { BiomniSubprocessService } from '../context-types.ts'
 import {
   advertisableModules,
+  availableLibraries,
+  DATA_LAKE_SKILL,
+  presentDatasets,
   readCatalog,
   skillNameOf,
+  SOFTWARE_SKILL,
+  type CatalogDataLake,
+  type CatalogDataset,
+  type CatalogLibrary,
   type CatalogModule,
   type SkillCatalog,
 } from './catalog.ts'
-import { describeModule, renderSkillBody } from './render.ts'
+import {
+  describeDataLake,
+  describeModule,
+  describeSoftware,
+  renderDataLakeBody,
+  renderSkillBody,
+  renderSoftwareBody,
+} from './render.ts'
 import { loadStaticSkills, type StaticSkill } from './static.ts'
 
 /** The provider name in the `ctx.skills` registry. */
@@ -41,6 +55,8 @@ export interface ProviderDeps {
   subprocess: BiomniSubprocessService
   /** The live interpreter setting, read per discovery. */
   python: () => string
+  /** The live data lake root, read per discovery; empty defers to Biomni. */
+  dataPath: () => string
   /** Reported when a catalog build fails; discovery itself never throws. */
   onError?: (error: unknown) => void
 }
@@ -52,6 +68,8 @@ export interface ProviderDeps {
  */
 type Locator =
   | { kind: 'module'; module: CatalogModule; biomni: string }
+  | { kind: 'data-lake'; dataLake: CatalogDataLake; datasets: CatalogDataset[]; biomni: string }
+  | { kind: 'software'; libraries: CatalogLibrary[]; biomni: string }
   | { kind: 'static'; skill: StaticSkill }
 
 /** One shipped markdown skill as a candidate. */
@@ -82,20 +100,29 @@ export function createBiomniSkillProvider(
   deps: ProviderDeps,
   control: SkillProviderControl,
 ): SkillProvider & { invalidate: () => void } {
-  /** The last completed catalog, keyed by the interpreter that produced it. */
-  let cached: { python: string; catalog: SkillCatalog } | undefined
+  /**
+   * The last completed catalog, keyed by BOTH settings that decide what it
+   * describes. The interpreter decides which functions are callable; the data
+   * root decides which datasets exist. A catalog carried across a change in
+   * either is not stale, it is wrong.
+   */
+  let cached: { key: string; catalog: SkillCatalog } | undefined
   /** An in-flight build, shared so concurrent discoveries spawn one process. */
   let building: Promise<SkillCatalog> | undefined
 
+  const keyOf = (python: string, dataPath: string): string => `${python}\u0000${dataPath}`
+
   const catalogFor = async (signal?: AbortSignal): Promise<SkillCatalog> => {
     const python = deps.python()
-    if (cached !== undefined && cached.python === python) return cached.catalog
+    const dataPath = deps.dataPath()
+    const key = keyOf(python, dataPath)
+    if (cached !== undefined && cached.key === key) return cached.catalog
     if (building !== undefined) return building
-    building = readCatalog(deps, python, signal)
+    building = readCatalog(deps, python, dataPath, signal)
       .then((catalog) => {
-        // Only cache a build that matches the setting still in force: a change
-        // mid-build makes this catalog describe the wrong interpreter.
-        if (deps.python() === python) cached = { python, catalog }
+        // Only cache a build that matches the settings still in force: a change
+        // mid-build makes this catalog describe the wrong environment.
+        if (keyOf(deps.python(), deps.dataPath()) === key) cached = { key, catalog }
         return catalog
       })
       .finally(() => { building = undefined })
@@ -150,7 +177,50 @@ export function createBiomniSkillProvider(
         },
       }))
 
-      return [...shipped, ...generated]
+      // The data lake and the software library are separate assets from the
+      // tool modules: neither is reachable through `biomni.tool`, and each is
+      // useful in sessions where no tool module is. Both are advertised only
+      // when this machine actually has something to offer under them.
+      const extras: SkillCandidate[] = []
+
+      const datasets = presentDatasets(catalog)
+      const dataLake = catalog.dataLake
+      if (dataLake !== undefined && datasets.length > 0) {
+        extras.push({
+          name: DATA_LAKE_SKILL,
+          description: describeDataLake(datasets),
+          invocation: { modelInvocable: true, userInvocable: true },
+          provider: PROVIDER_NAME,
+          source: 'bundled',
+          rank: BUNDLED_SKILL_RANK,
+          resourceBase: {
+            kind: 'opaque',
+            description: `Biomni's data lake on disk at ${dataLake.path}`,
+          },
+          locator: { kind: 'data-lake', dataLake, datasets, biomni } satisfies Locator,
+          metadata: { biomni, datasets: datasets.length, path: dataLake.path },
+        })
+      }
+
+      const libraries = availableLibraries(catalog)
+      if (libraries.length > 0) {
+        extras.push({
+          name: SOFTWARE_SKILL,
+          description: describeSoftware(libraries),
+          invocation: { modelInvocable: true, userInvocable: true },
+          provider: PROVIDER_NAME,
+          source: 'bundled',
+          rank: BUNDLED_SKILL_RANK,
+          resourceBase: {
+            kind: 'opaque',
+            description: 'the bioinformatics packages and command-line tools installed on this machine',
+          },
+          locator: { kind: 'software', libraries, biomni } satisfies Locator,
+          metadata: { biomni, entries: libraries.length },
+        })
+      }
+
+      return [...shipped, ...generated, ...extras]
     },
 
     async get(candidate) {
@@ -169,6 +239,18 @@ export function createBiomniSkillProvider(
       }
       if (locator.kind === 'static') {
         return { ...common, content: locator.skill.content } satisfies SkillDefinition
+      }
+      if (locator.kind === 'data-lake') {
+        return {
+          ...common,
+          content: renderDataLakeBody(locator.dataLake, locator.datasets, locator.biomni),
+        } satisfies SkillDefinition
+      }
+      if (locator.kind === 'software') {
+        return {
+          ...common,
+          content: renderSoftwareBody(locator.libraries, locator.biomni),
+        } satisfies SkillDefinition
       }
       return {
         ...common,

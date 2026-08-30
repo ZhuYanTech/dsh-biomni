@@ -162,3 +162,29 @@ describe('the /biomni command', () => {
     expect(report.text).toMatch(/Python\s+3\./)
   })
 })
+
+describe('the output cap', () => {
+  it('truncates output that would swamp the context', async () => {
+    // The cap is a CONTEXT budget, not a memory one: whatever survives is
+    // pasted into the model's next request. 200_000 characters — where this
+    // started — is roughly 50k tokens, so one stray print of a real dataframe
+    // would evict most of a session's working context.
+    const result = await run('print("x" * 40_000)')
+    expect(result.length).toBeLessThan(20_000)
+  })
+
+  it('says how much was lost and what to do instead', async () => {
+    // "[output clipped]" leaves the model to guess the fix, and the guess it
+    // makes is to re-run the same call.
+    const result = await run('print("x" * 40_000)')
+    expect(result).toMatch(/Output truncated: showing the first \d+ of \d+ characters/)
+    expect(result).toMatch(/re-running this will truncate again/)
+    expect(result).toMatch(/narrower slice/)
+  })
+
+  it('leaves output under the cap exactly as written', async () => {
+    const result = await run('print("hello")')
+    expect(result).toBe('hello')
+    expect(result).not.toMatch(/truncated/)
+  })
+})

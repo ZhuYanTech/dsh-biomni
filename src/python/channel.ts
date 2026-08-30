@@ -21,6 +21,11 @@ export interface WorkerFrame {
   error: string | null
   /** Whether `output` hit the worker's character cap. */
   truncated: boolean
+  /**
+   * True length of the captured output before the cap. Absent from a worker
+   * older than this field; the notice degrades to omitting the number.
+   */
+  outputChars?: number
 }
 
 interface Waiter {
@@ -105,11 +110,30 @@ export class WorkerChannel {
   }
 }
 
+/**
+ * The truncation notice.
+ *
+ * "[output clipped]" states the problem and leaves the model to guess the fix,
+ * and the guess it makes is to re-run the same call. Saying how much was lost
+ * and naming the two ways to narrow it turns a dead end into a next step.
+ */
+export function truncationNotice(frame: WorkerFrame): string {
+  const total = frame.outputChars
+  const shown = frame.output.length
+  const scale = total === undefined
+    ? `Output truncated to the first ${shown} characters.`
+    : `Output truncated: showing the first ${shown} of ${total} characters.`
+  return `[${scale} The rest was NOT captured and re-running this will truncate again. `
+    + 'Print a narrower slice instead — `df.head(20)`, a specific column, `len(x)` '
+    + 'rather than `x` — or write the full result to a file and read back the part '
+    + 'you need.]'
+}
+
 /** Render one worker frame as the model-facing result string. */
 export function renderFrame(frame: WorkerFrame): string {
   const parts: string[] = []
   if (frame.output.length > 0) parts.push(frame.output.replace(/\n$/, ''))
-  if (frame.truncated) parts.push('[output clipped]')
+  if (frame.truncated) parts.push(truncationNotice(frame))
   if (frame.value !== null && frame.value !== undefined) parts.push(frame.value)
   if (frame.error !== null && frame.error !== undefined) parts.push(frame.error.replace(/\n$/, ''))
   if (parts.length === 0) return '(no output)'

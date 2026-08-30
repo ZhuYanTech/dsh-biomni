@@ -11,9 +11,11 @@ Protocol, one JSON object per line in each direction:
 
   request   {"id": str, "code": str}
   response  {"id": str, "ok": bool, "output": str, "value": str|null,
-             "error": str|null, "truncated": bool}
+             "error": str|null, "truncated": bool, "outputChars": int}
 
-``output`` is everything the code wrote to stdout/stderr. ``value`` is the
+``output`` is everything the code wrote to stdout/stderr, capped at
+``MAX_OUTPUT_CHARS`` with ``outputChars`` carrying the true length so the
+caller can say what was lost. ``value`` is the
 repr of the final expression when the snippet ends in one, so a bare
 ``df.head()`` reads back like a REPL. ``error`` carries the formatted
 traceback with this worker's own frames stripped.
@@ -37,7 +39,18 @@ os.dup2(_NULL_FD, 1)
 # The persistent namespace. Everything the agent defines accumulates here.
 NAMESPACE = {"__name__": "__dsh_python__", "__builtins__": __builtins__}
 
-MAX_OUTPUT_CHARS = 200_000
+#: Character cap on one call's captured output.
+#:
+#: This is a CONTEXT budget, not a memory one. Whatever survives here is pasted
+#: straight into the model's next request, and 200_000 characters — the value
+#: this started at — is roughly 50k tokens: one stray `print(df)` on a real
+#: dataframe would evict most of a session's working context to show a table
+#: nobody reads past the tenth row.
+#:
+#: 16_000 is about 4k tokens: enough for a head(), a describe(), a stack trace,
+#: or a few hundred lines of log, and small enough that hitting it is a nudge
+#: rather than a catastrophe. The truncation notice says how to get the rest.
+MAX_OUTPUT_CHARS = 16_000
 
 
 def _send(payload):
@@ -111,11 +124,21 @@ def _execute(code):
         capture.seek(0)
         output = capture.read()
 
-    truncated = len(output) > MAX_OUTPUT_CHARS
+    full_length = len(output)
+    truncated = full_length > MAX_OUTPUT_CHARS
     if truncated:
+        # Keep the HEAD: a traceback's own message is at the end, but that
+        # travels in `error`, while a truncated listing is only useful from
+        # the top.
         output = output[:MAX_OUTPUT_CHARS]
 
-    return {"output": output, "value": value, "error": error, "truncated": truncated}
+    return {
+        "output": output,
+        "value": value,
+        "error": error,
+        "truncated": truncated,
+        "outputChars": full_length,
+    }
 
 
 def main():
@@ -139,6 +162,7 @@ def main():
             "value": result["value"],
             "error": result["error"],
             "truncated": result["truncated"],
+            "outputChars": result["outputChars"],
         })
 
 
