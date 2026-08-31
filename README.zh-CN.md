@@ -11,7 +11,7 @@
 [![DSH Plugin](https://img.shields.io/badge/DSH-plugin-5b6cff)](https://github.com/topics/dsh-plugin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-[English](./README.md) · **简体中文**
+[English](./README.md) · **简体中文** · [更新日志](./CHANGELOG.md)
 
 </div>
 
@@ -69,13 +69,32 @@ bash scripts/install.sh web
 **可选，而且值得知道为什么。** 数据湖和软件目录**立刻就能用** —— 它们读的是随插件发布的一份清单，
 再对着你这台机器逐项核对。只有那 21 个工具模块 skill 需要 Biomni 本体，因为那些是真的要 import 的 Python。
 
-Biomni 的库需要 Python 3.11+。macOS 自带的是 3.9，装不了。
+```sh
+git clone https://github.com/ZhuYanTech/dsh-biomni && cd dsh-biomni
+bash scripts/setup-env.sh
+```
+
+脚本在你装了 [uv](https://docs.astral.sh/uv/) 时优先用它——同一份解析，**11 秒**对 pip 的几分钟——
+没有就回退到 pip。然后它会**跑一遍探针，Biomni 真的能 import 才算成功**。这一步才是关键：一个建在
+Python 3.9 上的环境、或者某个 wheel 悄悄装失败的环境，在你第一次调用工具之前和正常的一模一样。
+最后它把要粘贴的设置连同路径一起打印出来。
+
+加 `--extras` 装下面那四个可选包；给一个目录参数可以建到 `.venv` 以外的地方。
+
+<details>
+<summary>手动装，或者用容器</summary>
 
 ```sh
 curl -sLO https://raw.githubusercontent.com/ZhuYanTech/dsh-biomni/main/python/requirements-biomni.lock.txt
-python3.11 -m venv .venv
+python3.11 -m venv .venv          # 需要 3.11+，macOS 自带的是 3.9
 .venv/bin/pip install -r requirements-biomni.lock.txt
 ```
+
+如果你宁愿运维配一次、而不是每个人自己建 venv，仓库里的 `Dockerfile` 把解释器打成镜像。它的活动
+部件更多——插件的 `python/` 目录要挂进去，`python` 设置要指向一个在容器里执行的包装脚本——文件里
+写清了怎么接。CI 每次推送都会构建这个镜像并在里面跑探针，所以"能构建"是被检查过的，不是我说的。
+
+</details>
 
 实测：**77 个包，806 MB，Biomni 的 312 个函数里 279 个可调用。**
 

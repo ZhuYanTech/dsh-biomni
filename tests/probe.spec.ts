@@ -199,3 +199,34 @@ describe('dataset sizes across manifest sources', () => {
     expect(sized.length).toBe(Object.keys(manifest.datasets).length)
   })
 })
+
+describe('the environment setup script', () => {
+  const script = repoFile('scripts/setup-env.sh')
+
+  it('verifies rather than assuming, and fails loudly', () => {
+    // The reason the script exists. An environment that installed without
+    // error can still be unusable — wrong Python, a wheel that failed quietly
+    // — and it looks identical until the first tool call.
+    expect(script).toContain('probe.py')
+    expect(script).toMatch(/exit 1/)
+    expect(script).toContain('biomni did not install into this interpreter')
+  })
+
+  it('installs from the lock, not the loose requirements', () => {
+    // Installing the unpinned list would defeat the reproducibility the lock
+    // exists for, and would silently disagree with the measured figures.
+    expect(script).toContain('requirements-biomni.lock.txt')
+    expect(script).not.toMatch(/requirements-biomni\.txt/)
+  })
+
+  it('treats uv as an optimization, never a requirement', () => {
+    expect(script).toContain('command -v uv')
+    expect(script).toMatch(/INSTALLER=pip/)
+  })
+
+  it('refuses a Python older than Biomni needs', () => {
+    // macOS ships 3.9, and the failure it produces is a syntax error deep in a
+    // dependency rather than anything naming the version.
+    expect(script).toContain('(3, 11)')
+  })
+})

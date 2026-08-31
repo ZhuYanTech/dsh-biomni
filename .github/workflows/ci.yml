@@ -43,6 +43,38 @@ jobs:
           python3 python/probe.py | python3 -c 'import json,sys; json.load(sys.stdin)'
           python3 python/skills.py | python3 -c 'import json,sys; json.load(sys.stdin)'
 
+  image:
+    name: the interpreter image builds and probes itself
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Dockerfile is the one artifact here that cannot be checked by
+      # reading it: a lock that resolves on the author's machine can still fail
+      # on a clean base image. Building it in CI is what makes "this image
+      # works" a fact rather than a claim.
+      - name: build
+        run: docker build -t dsh-biomni-env .
+
+      # `verify` runs the same probe the plugin runs, inside the image. A build
+      # that succeeds while the interpreter cannot import Biomni is exactly the
+      # failure this project exists to catch, so the image is not accepted
+      # until it reports modules of its own.
+      - name: probe the image
+        run: |
+          REPORT=$(docker run --rm dsh-biomni-env verify)
+          echo "$REPORT" | python3 -c '
+          import json, sys
+          report = json.load(sys.stdin)
+          if report.get("biomni") is None:
+              sys.exit("image built but biomni is not importable in it")
+          importable = sum(1 for m in report.get("modules", []) if m.get("importable"))
+          callable_ = report["totalFunctions"] - report["blockedFunctions"]
+          print(f"biomni {report[\"biomni\"]}: {importable} modules, {callable_} functions callable")
+          if importable == 0:
+              sys.exit("no tool module imports in the image")
+          '
+
   mount:
     name: mount into a real harness
     runs-on: ubuntu-latest

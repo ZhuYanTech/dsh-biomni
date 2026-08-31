@@ -11,7 +11,7 @@ that only ever promise what your machine can actually deliver.
 [![DSH Plugin](https://img.shields.io/badge/DSH-plugin-5b6cff)](https://github.com/topics/dsh-plugin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-**English** · [简体中文](./README.zh-CN.md)
+**English** · [简体中文](./README.zh-CN.md) · [Changelog](./CHANGELOG.md)
 
 </div>
 
@@ -75,13 +75,38 @@ immediately — they read a manifest shipped with the plugin, checked against yo
 machine. Only the 21 tool-module skills need Biomni itself, because those are real
 Python that has to import.
 
-Biomni's library needs Python 3.11+. macOS ships 3.9, which will not do.
+```sh
+git clone https://github.com/ZhuYanTech/dsh-biomni && cd dsh-biomni
+bash scripts/setup-env.sh
+```
+
+The script picks [uv](https://docs.astral.sh/uv/) when you have it — 11 seconds against
+minutes for pip, on an identical resolution — and falls back to pip otherwise. It then
+**runs the probe and refuses to claim success unless Biomni actually imports**, which is
+the part that matters: an environment built on Python 3.9, or one where a wheel failed
+quietly, looks exactly like a working one until the first tool call. It finishes by
+printing the setting to paste, with the path filled in.
+
+Add `--extras` for the four opt-in packages below. Pass a directory to build somewhere
+other than `.venv`.
+
+<details>
+<summary>By hand, or in a container</summary>
 
 ```sh
 curl -sLO https://raw.githubusercontent.com/ZhuYanTech/dsh-biomni/main/python/requirements-biomni.lock.txt
-python3.11 -m venv .venv
+python3.11 -m venv .venv          # 3.11+ required; macOS ships 3.9
 .venv/bin/pip install -r requirements-biomni.lock.txt
 ```
+
+For deployments that would rather provision once than have every user build a venv,
+the `Dockerfile` builds the interpreter as an image. It is more moving parts — the
+plugin's `python/` directory has to be mounted in and the `python` setting has to name
+a wrapper that runs inside the container — and the file explains the wiring. CI builds
+the image and runs the probe inside it on every push, so "it builds" is checked rather
+than claimed.
+
+</details>
 
 Measured: **77 packages, 806 MB, 279 of Biomni's 312 functions callable.**
 
