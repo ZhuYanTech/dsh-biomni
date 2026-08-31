@@ -27,6 +27,14 @@
     },
     "./package.json": "./package.json"
   },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "biomni",
+    "bioinformatics",
+    "biomedical",
+    "agent-tools"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -46,7 +54,7 @@
   "files": [
     "LICENSE",
     "README.md",
-    "README_EN.md",
+    "README.zh-CN.md",
     "cordis.patch.yml",
     "dsh.plugin.json",
     "lib/client-registry.js",
