@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { renderDatasets, type DatasetCatalog } from '../src/datasets.ts'
 import { renderReport } from '../src/probe.ts'
 import { BIOMNI_PREFS_DEFAULTS, type ProbeReport } from '../src/prefs-shared.ts'
 
@@ -110,5 +111,75 @@ describe('renderReport', () => {
     expect(text).toContain('shipped manifest')
     // No module survey to show, so it must not print an empty 0/0 line.
     expect(text).not.toMatch(/Modules\s+0\/0/)
+  })
+})
+
+// ── The dataset catalog ─────────────────────────────────────────────────────
+
+/** A catalog with one present, one fetchable, one restricted. */
+const CATALOG: DatasetCatalog = {
+  path: '/data/biomni_data/data_lake',
+  source: 'vendored',
+  biomni: '0.0.8',
+  total: 3,
+  present: 1,
+  entries: [
+    {
+      name: 'synthetic_rescue.parquet',
+      description: 'Synthetic rescue interactions.',
+      bytes: 7170,
+      size: '7.0 KB',
+      present: true,
+      commercial: true,
+    },
+    {
+      name: 'DepMap_Model.csv',
+      description: 'Cancer model metadata.',
+      bytes: 4_000_000,
+      size: '3.8 MB',
+      present: false,
+      commercial: true,
+    },
+    {
+      name: 'BindingDB_All_202409.tsv',
+      description: 'Measured binding affinities.',
+      bytes: 6_245_551_822,
+      size: '5.8 GB',
+      present: false,
+      commercial: false,
+    },
+  ],
+}
+
+describe('renderDatasets', () => {
+  it('leads with what is usable now', () => {
+    const text = renderDatasets(CATALOG)
+    expect(text.indexOf('On disk')).toBeLessThan(text.indexOf('Available to fetch'))
+    expect(text).toContain('1/3 datasets on disk')
+  })
+
+  it('puts a size on every row, because that is the decision', () => {
+    // These span four orders of magnitude. A name without a size gives no way
+    // to tell a 7 KB fetch from a 5.8 GB one.
+    const text = renderDatasets(CATALOG)
+    for (const entry of CATALOG.entries) expect(text).toContain(entry.size)
+  })
+
+  it('totals what taking everything would cost', () => {
+    expect(renderDatasets(CATALOG)).toContain('6.2 GB if you took all of it')
+  })
+
+  it('marks the restricted ones and says what that means', () => {
+    const text = renderDatasets(CATALOG)
+    expect(text).toMatch(/BindingDB_All_202409\.tsv\s+\[non-commercial\]/)
+    expect(text).toContain('--accept-noncommercial')
+    expect(text).toContain('legal, not')
+  })
+
+  it('says the catalog is the shipped one when it is', () => {
+    // Otherwise a reader cannot tell a listing describing their installed
+    // Biomni from one describing the version this plugin captured.
+    expect(renderDatasets(CATALOG)).toContain('shipped manifest')
+    expect(renderDatasets({ ...CATALOG, source: 'live' })).not.toContain('shipped manifest')
   })
 })

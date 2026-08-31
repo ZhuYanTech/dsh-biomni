@@ -1,6 +1,6 @@
 {
   "name": "dsh-biomni",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "DSH plugin: a persistent, per-session Python interpreter provisioned with Biomni's biomedical tool library, plus a Settings section that reports what the interpreter can actually do.",
   "type": "module",
   "repository": {
@@ -69,6 +69,7 @@
     "lib/types/**/*.d.ts",
     "preset",
     "python/_gates.py",
+    "python/fetch.py",
     "python/probe.py",
     "python/requirements-biomni.txt",
     "python/requirements-biomni.lock.txt",

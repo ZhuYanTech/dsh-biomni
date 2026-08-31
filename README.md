@@ -121,7 +121,8 @@ biomni:
 ### 4. See what you actually got
 
 ```
-/biomni
+/biomni              what this interpreter can run, and what would fix the gaps
+/biomni-datasets     what data is here, what is available, and what each costs
 ```
 
 Modules that import, functions that are callable, datasets on disk, tools installed — and for
@@ -146,13 +147,15 @@ function body. dsh-biomni reports these separately and never averages them into 
 whole point is that a single "82% available" figure would hide exactly the gap that causes
 invented results.
 
-**The data lake is yours to download.** The 76 datasets are ~11 GB and arrive through Biomni's own
-flow, not this plugin. Nothing downloaded simply means no data-lake skill — a definite answer,
-not a failure.
+**The data lake is fetched one dataset at a time.** All 76 come to 15.1 GB, and they range from a
+4 KB assay table to a 6.2 GB binding database — so almost nobody wants the set. `/biomni-datasets`
+lists what is on disk, what is available, and what each one costs; `python/fetch.py` fetches by
+name. Nothing downloaded simply means no data-lake skill: a definite answer, not a failure.
 
 **Some datasets are non-commercial.** Biomni ships a commercial-use subset (41 of 76). A dataset
-can be downloaded, readable, and still restricted, so the licence is tracked as its own fact and
-named in the skill.
+can be downloaded, readable, and still restricted, so the licence is tracked as its own fact,
+named in the skill, and enforced at the one point where it binds: fetching a restricted dataset
+needs an explicit acknowledgement.
 
 **Python belongs to `run_python`, not the shell.** A guard stops the agent from reaching a
 different interpreter through bash — but it lets through calls that name *your* configured

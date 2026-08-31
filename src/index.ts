@@ -27,6 +27,7 @@ import { BIOMNI_PREFS_NS, Config, PrefsSchema, prefsBaseOf, type BiomniConfig } 
 import type { BiomniPrefs } from './prefs-shared.ts'
 import { buildApi, type BiomniSettingsFace } from './api.ts'
 import { shellPythonGuard } from './guard.ts'
+import { fetchDatasets, listDatasets, renderDatasets } from './datasets.ts'
 import { probeEnvironment, renderReport } from './probe.ts'
 import { pythonWorkers } from './python/workers.ts'
 import { runPythonTool } from './python/tool.ts'
@@ -158,11 +159,42 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     },
   }))
 
+  // A read-only listing, deliberately separate from `/biomni`: the environment
+  // report answers "can this machine run the tools", and this answers "what
+  // data is here and what would more cost". Fetching is not a slash command —
+  // it is an operator action with a licence decision and up to 6 GB attached,
+  // and it belongs on a surface that can present both.
+  ctx.effect(() => ctx.commands.register({
+    name: 'biomni-datasets',
+    description: 'list Biomni\'s data lake: what is on disk, what is available, and what each costs',
+    recordInput: false,
+    handler: async (invocation) => {
+      try {
+        return { kind: 'success', text: renderDatasets(await listDatasets(datasetRunner(invocation.signal))) }
+      } catch (cause) {
+        return {
+          kind: 'error',
+          text: `Could not read the dataset catalog: ${String((cause as Error | undefined)?.message ?? cause)}`,
+        }
+      }
+    },
+  }))
+
   // ── The fenced JSON API ──────────────────────────────────────────────────
+  /** What both the dataset catalog and the fetcher need, read live. */
+  const datasetRunner = (signal?: AbortSignal) => ({
+    ctx,
+    python: live.python,
+    dataPath: live.dataPath,
+    ...(signal === undefined ? {} : { signal }),
+  })
+
   const api = buildApi({
     settings: () => settingsFace,
     python: () => live.python,
     probe: python => probeEnvironment(ctx, python, live.dataPath),
+    datasets: () => listDatasets(datasetRunner()),
+    fetch: (names, acceptNonCommercial) => fetchDatasets(datasetRunner(), names, acceptNonCommercial),
   })
 
   // ── The skill catalog ────────────────────────────────────────────────────

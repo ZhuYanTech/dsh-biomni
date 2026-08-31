@@ -254,6 +254,26 @@ def _vendored():
     return data
 
 
+def _normalize_datasets(raw):
+    """Accept both dataset shapes and return {name: {description, bytes}}.
+
+    A live biomni gives `{name: "description"}`; the vendored copy adds the
+    published size. Normalizing here means every caller sees one shape and
+    `bytes` is simply None when the source does not know it.
+    """
+    out = {}
+    for name, value in (raw or {}).items():
+        if isinstance(value, dict):
+            size = value.get("bytes")
+            out[name] = {
+                "description": str(value.get("description", "")),
+                "bytes": size if isinstance(size, int) else None,
+            }
+        else:
+            out[name] = {"description": str(value), "bytes": None}
+    return out
+
+
 def manifest():
     """Biomni's asset manifests, and where they came from.
 
@@ -281,7 +301,7 @@ def manifest():
         if datasets or libraries:
             allowed = cm.get("data_lake_dict")
             return (
-                datasets or {},
+                _normalize_datasets(datasets),
                 libraries or {},
                 None if allowed is None else set(allowed),
                 "live",
@@ -292,7 +312,7 @@ def manifest():
     if data is not None:
         allowed = data.get("commercialDatasets")
         return (
-            data.get("datasets") or {},
+            _normalize_datasets(data.get("datasets")),
             data.get("libraries") or {},
             None if allowed is None else set(allowed),
             "vendored",
@@ -339,11 +359,15 @@ def data_lake_entries(explicit=None):
             size = path.stat().st_size if path.is_file() else None
         except OSError:
             size = None
+        record = advertised[name]
         entries.append({
             "name": name,
-            "description": str(advertised[name]),
+            "description": record["description"],
             "present": size is not None,
+            # On-disk size when present; the published size otherwise, so a
+            # reader can weigh fetching it without asking the network.
             "bytes": size,
+            "remoteBytes": record["bytes"],
             "commercial": None if allowed is None else name in allowed,
         })
 

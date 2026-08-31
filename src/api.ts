@@ -18,6 +18,7 @@
  * it over this plugin's own fenced route instead. The write keeps the seam's
  * revision guard, so a stale editor is still refused.
  */
+import type { DatasetCatalog, FetchReport } from './datasets.ts'
 import type { ProbeReport } from './prefs-shared.ts'
 import { BiomniError } from './wire.ts'
 
@@ -58,6 +59,10 @@ export interface ApiDeps {
   python: () => string
   /** Run the environment survey against one interpreter. */
   probe: (python: string) => Promise<ProbeReport>
+  /** The data lake catalog: what exists, what it costs, what is already here. */
+  datasets: () => Promise<DatasetCatalog>
+  /** Fetch datasets by manifest name. */
+  fetch: (names: string[], acceptNonCommercial: boolean) => Promise<FetchReport>
 }
 
 /** One API method: an unknown JSON payload in, a JSON-serializable value out. */
@@ -115,6 +120,37 @@ export function buildApi(deps: ApiDeps): Record<string, ApiMethod> {
       } catch (cause) {
         return { python, report: null, error: (cause as Error | undefined)?.message ?? String(cause) }
       }
+    },
+
+    /**
+     * The data lake catalog. Same envelope reasoning as `env.probe`: a helper
+     * that cannot run is usually a wrong interpreter path, which is data the
+     * panel should render rather than a transport failure.
+     */
+    'datasets.list': async (): Promise<{ catalog: DatasetCatalog | null; error?: string }> => {
+      try {
+        return { catalog: await deps.datasets() }
+      } catch (cause) {
+        return { catalog: null, error: (cause as Error | undefined)?.message ?? String(cause) }
+      }
+    },
+
+    /**
+     * Fetch datasets by manifest name.
+     *
+     * A write, so it is strict where the reads are forgiving: a malformed
+     * payload is refused rather than coerced. The licence acknowledgement has
+     * to arrive as an explicit `true` — defaulting it either way would make a
+     * deliberate choice implicit, and it is the one thing here that is not
+     * reversible by deleting a file.
+     */
+    'datasets.fetch': async (payload: unknown): Promise<FetchReport> => {
+      const record = payload as { names?: unknown; acceptNonCommercial?: unknown } | null
+      const names = record?.names
+      if (!Array.isArray(names) || names.length === 0 || !names.every(n => typeof n === 'string' && n !== '')) {
+        throw new BiomniError('bad-request', 'missing or invalid "names"')
+      }
+      return deps.fetch(names as string[], record?.acceptNonCommercial === true)
     },
   }
 }

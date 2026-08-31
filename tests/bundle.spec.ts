@@ -126,7 +126,8 @@ describe('the vendored manifest', () => {
     readFileSync(fileURLToPath(new URL('../data/biomni-manifest.json', import.meta.url)), 'utf8'),
   ) as {
     biomni: string
-    datasets: Record<string, string>
+    bucket: string
+    datasets: Record<string, { description: string; bytes: number | null }>
     commercialDatasets: string[] | null
     libraries: Record<string, string>
   }
@@ -140,12 +141,28 @@ describe('the vendored manifest', () => {
   it('describes every entry it lists', () => {
     // An entry with no description is worse than an absent one: it reaches the
     // model as a name with nothing to judge relevance by.
-    for (const [name, description] of Object.entries(manifest.datasets)) {
-      expect(description.length, `dataset ${name} has no description`).toBeGreaterThan(10)
+    for (const [name, record] of Object.entries(manifest.datasets)) {
+      expect(record.description.length, `dataset ${name} has no description`).toBeGreaterThan(10)
     }
     for (const [name, description] of Object.entries(manifest.libraries)) {
       expect(description.length, `library ${name} has no description`).toBeGreaterThan(10)
     }
+  })
+
+  it('carries a published size for every dataset', () => {
+    // The size is what the fetch decision turns on — these range from 4 KB to
+    // 6.2 GB. A null here means the capture ran without network and shipped a
+    // catalog that cannot tell a trivial download from a 6 GB one.
+    for (const [name, record] of Object.entries(manifest.datasets)) {
+      expect(record.bytes, `dataset ${name} has no size`).toBeGreaterThan(0)
+    }
+  })
+
+  it('records the bucket the fetcher reads from', () => {
+    // Hard-coding it in two places is how one of them goes stale; the fetcher
+    // prefers this value and only falls back to its own constant.
+    expect(manifest.bucket).toMatch(/^https:\/\//)
+    expect(manifest.bucket.endsWith('/')).toBe(true)
   })
 
   it('keeps the commercial subset inside the full set', () => {

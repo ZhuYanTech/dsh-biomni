@@ -138,6 +138,8 @@ describe('the method table', () => {
       settings: () => undefined,
       python: () => 'python3',
       probe: async () => { throw new Error('unused') },
+      datasets: async () => { throw new Error('unused') },
+      fetch: async () => { throw new Error('unused') },
     })
     expect(api['settings.get']!({})).toEqual({ value: undefined, revision: undefined })
     await expect(api['settings.update']!({ patch: {} }))
@@ -151,6 +153,8 @@ describe('the method table', () => {
       settings: () => undefined,
       python: () => '/no/such/python',
       probe: async () => { throw new Error('ENOENT') },
+      datasets: async () => { throw new Error('unused') },
+      fetch: async () => { throw new Error('unused') },
     })
     await expect(api['env.probe']!({})).resolves.toEqual({
       python: '/no/such/python',
@@ -167,6 +171,8 @@ describe('the method table', () => {
       }),
       python: () => 'python3',
       probe: async () => { throw new Error('unused') },
+      datasets: async () => { throw new Error('unused') },
+      fetch: async () => { throw new Error('unused') },
     })
     await expect(api['settings.update']!({ patch: { timeoutMs: -1 } }))
       .rejects.toMatchObject({ code: 'settings-rejected', status: 400 })

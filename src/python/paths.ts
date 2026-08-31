@@ -30,3 +30,6 @@ export const PROBE_PATH = assetPath('probe.py')
 
 /** The one-shot skill-catalog generator. */
 export const SKILLS_PATH = assetPath('skills.py')
+
+/** The data lake catalog reader and per-dataset fetcher. */
+export const FETCH_PATH = assetPath('fetch.py')
