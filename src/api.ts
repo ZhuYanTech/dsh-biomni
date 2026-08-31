@@ -18,6 +18,7 @@
  * it over this plugin's own fenced route instead. The write keeps the seam's
  * revision guard, so a stale editor is still refused.
  */
+import type { ArtifactListing } from './artifacts.ts'
 import type { DatasetCatalog, FetchReport } from './datasets.ts'
 import type { ProbeReport } from './prefs-shared.ts'
 import { BiomniError } from './wire.ts'
@@ -63,6 +64,8 @@ export interface ApiDeps {
   datasets: () => Promise<DatasetCatalog>
   /** Fetch datasets by manifest name. */
   fetch: (names: string[], acceptNonCommercial: boolean) => Promise<FetchReport>
+  /** What the interpreter has written into the session's output directory. */
+  artifacts: () => Promise<ArtifactListing>
 }
 
 /** One API method: an unknown JSON payload in, a JSON-serializable value out. */
@@ -152,5 +155,12 @@ export function buildApi(deps: ApiDeps): Record<string, ApiMethod> {
       }
       return deps.fetch(names as string[], record?.acceptNonCommercial === true)
     },
+
+    /**
+     * The output directory. Unlike the dataset helpers this needs no
+     * subprocess — it is a directory read — so a failure here is a real fault
+     * and is allowed to throw.
+     */
+    'artifacts.list': (): Promise<ArtifactListing> => deps.artifacts(),
   }
 }

@@ -7,10 +7,11 @@
  * wire code, so the caller can distinguish a settings conflict (re-read and
  * retry) from a transport failure (keep the defaults).
  */
+import type { Artifact, ArtifactListing } from '../artifacts.ts'
 import type { DatasetCatalog, DatasetEntry, FetchReport } from '../datasets.ts'
 import type { ProbeReport } from '../prefs-shared.ts'
 
-export type { DatasetCatalog, DatasetEntry, FetchReport }
+export type { Artifact, ArtifactListing, DatasetCatalog, DatasetEntry, FetchReport }
 
 /** One wire failure. */
 export class BiomniApiError extends Error {
@@ -87,4 +88,17 @@ export const api = {
    */
   datasetsFetch: (names: string[], acceptNonCommercial = false) =>
     call<FetchReport>('datasets.fetch', { names, acceptNonCommercial }),
+
+  /** What the interpreter has written to this session's output directory. */
+  artifactsList: (signal?: AbortSignal) => call<ArtifactListing>('artifacts.list', {}, signal),
+
+  /**
+   * The download URL for one artifact.
+   *
+   * A URL rather than a fetch: the browser downloads better than anything
+   * reimplemented here, and the route answers GET and sends an attachment.
+   * The name is a query parameter so slashes in a nested path survive without
+   * being mistaken for route segments.
+   */
+  artifactUrl: (name: string) => `/biomni/api/artifacts.get?name=${encodeURIComponent(name)}`,
 }

@@ -33,3 +33,12 @@ export const SKILLS_PATH = assetPath('skills.py')
 
 /** The data lake catalog reader and per-dataset fetcher. */
 export const FETCH_PATH = assetPath('fetch.py')
+
+/**
+ * The per-workspace directory the interpreter writes results into, relative to
+ * the sandbox workspace root.
+ *
+ * Visible rather than dot-prefixed: these are the user's outputs, and a plot
+ * they cannot find in a file browser may as well not exist.
+ */
+export const OUTPUT_DIR_NAME = 'biomni-out'

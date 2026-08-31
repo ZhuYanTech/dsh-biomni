@@ -210,7 +210,11 @@ describe.skipIf(!available)('against a real Biomni interpreter', () => {
     expect(tallied).toBe(catalog.libraries!.length)
   })
 
-  it('reaches the tool library from the persistent interpreter', async () => {
+  // Measured: `from biomni.tool import literature` pulls the langchain chain and
+  // takes ~4s on a cold page cache against ~0.8s warm. The default 5s timeout
+  // was therefore asserting something about the filesystem, not about the
+  // plugin, and failed the first time the suite ran after a rebuild.
+  it('reaches the tool library from the persistent interpreter', { timeout: 30_000 }, async () => {
     const tool = rec.tools[0]!
     const owner = stubOwner(rec)
     const result = await tool.execute(

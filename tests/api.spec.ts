@@ -140,6 +140,7 @@ describe('the method table', () => {
       probe: async () => { throw new Error('unused') },
       datasets: async () => { throw new Error('unused') },
       fetch: async () => { throw new Error('unused') },
+      artifacts: async () => { throw new Error('unused') },
     })
     expect(api['settings.get']!({})).toEqual({ value: undefined, revision: undefined })
     await expect(api['settings.update']!({ patch: {} }))
@@ -155,6 +156,7 @@ describe('the method table', () => {
       probe: async () => { throw new Error('ENOENT') },
       datasets: async () => { throw new Error('unused') },
       fetch: async () => { throw new Error('unused') },
+      artifacts: async () => { throw new Error('unused') },
     })
     await expect(api['env.probe']!({})).resolves.toEqual({
       python: '/no/such/python',
@@ -173,6 +175,7 @@ describe('the method table', () => {
       probe: async () => { throw new Error('unused') },
       datasets: async () => { throw new Error('unused') },
       fetch: async () => { throw new Error('unused') },
+      artifacts: async () => { throw new Error('unused') },
     })
     await expect(api['settings.update']!({ patch: { timeoutMs: -1 } }))
       .rejects.toMatchObject({ code: 'settings-rejected', status: 400 })
@@ -198,6 +201,7 @@ describe('the dataset methods', () => {
         calls.push({ names, accept: acceptNonCommercial })
         return { path: '/data', results: names.map(name => ({ name, status: 'fetched' as const })) }
       },
+      artifacts: async () => ({ path: '/ws/biomni-out', exists: false, totalBytes: 0, entries: [] }),
     })
     return { api, calls }
   }

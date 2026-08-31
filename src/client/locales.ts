@@ -75,6 +75,23 @@ export const zh = {
   acceptNonCommercialDesc: '76 个数据集里有 35 个不在 Biomni 的商用子集内。限制是法律层面的，不是技术层面的——文件照样能读。勾选后才能获取这些数据集。',
   andMoreDatasets: '还有 {n} 个，用上面的筛选框缩小范围。',
 
+
+  artifactsHeading: '产出文件',
+  artifactsLoading: '读取中…',
+  artifactsEmpty: '读不到输出目录。',
+  artifactsFailed: '无法读取输出目录',
+  artifactsNone: '还没有产出。解释器的命名空间里已经绑好了 BIOMNI_OUT——它往那里写的任何东西都会出现在这里，可直接下载。',
+  artifactsPath: '位置：{path}',
+  filesLabel: '个文件',
+  totalLabel: '合计',
+  download: '下载',
+  refresh: '刷新',
+  justNow: '刚刚',
+  minutesAgo: '{n} 分钟前',
+  hoursAgo: '{n} 小时前',
+  daysAgo: '{n} 天前',
+  andMoreFiles: '还有 {n} 个文件未列出。',
+
   saveFailed: '保存失败',
   conflict: '设置已被其他地方修改，已重新载入',
 }
@@ -143,6 +160,23 @@ export const en: Record<keyof typeof zh, string> = {
   acceptNonCommercial: 'I understand the non-commercial restriction',
   acceptNonCommercialDesc: '35 of the 76 datasets sit outside Biomni\'s commercial-use subset. The restriction is legal, not technical — the files read the same either way. Fetching those needs this ticked.',
   andMoreDatasets: '{n} more; narrow the filter above.',
+
+
+  artifactsHeading: 'Output files',
+  artifactsLoading: 'Reading…',
+  artifactsEmpty: 'Could not read the output directory.',
+  artifactsFailed: 'Could not read the output directory',
+  artifactsNone: 'Nothing written yet. The interpreter has BIOMNI_OUT bound in its namespace — anything it saves there appears here, ready to download.',
+  artifactsPath: 'Location: {path}',
+  filesLabel: 'files',
+  totalLabel: 'total',
+  download: 'Download',
+  refresh: 'Refresh',
+  justNow: 'just now',
+  minutesAgo: '{n} min ago',
+  hoursAgo: '{n} h ago',
+  daysAgo: '{n} d ago',
+  andMoreFiles: '{n} more files not listed.',
 
   saveFailed: 'Could not save',
   conflict: 'Settings changed elsewhere; reloaded',

@@ -4,6 +4,30 @@ Measured figures throughout. Where a number appears here it was read off a real
 run, not estimated — several of these releases exist because an estimate turned
 out to be wrong.
 
+## 0.2.0
+
+**Results have somewhere to go.**
+
+- `run_python` returns text capped at 16k characters, so a plot could not come
+  back at all and a real table came back truncated. The interpreter now has an
+  output directory bound in its namespace as `BIOMNI_OUT`, and **each call
+  reports the files it wrote**, with sizes — costing nothing on the calls that
+  write nothing, which is most of them.
+- `/biomni-out` lists the directory; Settings → Biomni lists and downloads it.
+  Read-only on both: the agent writes, the operator takes away.
+
+**Fixed while writing the tests, and the reason they were worth writing:**
+`path.resolve` folds away `..` but does **not follow symlinks**, and the thing
+filling this directory is an agent that can call `os.symlink`. A link at
+`BIOMNI_OUT/notes.txt` pointing at `/etc/passwd` passed every lexical
+containment check and would have been served by the download route. Both sides
+are now resolved through the filesystem with `realpath`, and the refusal is
+tested against a link an actual `run_python` call created.
+
+Downloads are capped at 100 MB and always sent as attachments with `nosniff`;
+no artifact is ever served as `text/html`, since these are model-written files
+on the harness's own origin.
+
 ## 0.1.1
 
 **One command builds the environment, and proves it works.**

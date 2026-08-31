@@ -8,6 +8,9 @@
  * `readFrom(offset)`. Every shape below is copied from the service face it
  * mirrors (src/context-types.ts).
  */
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { ToolDefinition, ToolGuard } from '@deepseek-ai/dsh-tools'
 import type { SkillProvider, SkillProviderControl } from '@deepseek-ai/dsh-skill'
@@ -95,6 +98,9 @@ function stubSubprocess() {
  * @param options.withoutSkills - drop the skills service, so the skill
  * provider's child fiber never activates.
  */
+/** The workspace every stub context reports, created once per test process. */
+export const workspaceRoot = mkdtempSync(join(tmpdir(), 'dsh-biomni-ws-'))
+
 export function stubContext(
   options: { withoutWeb?: boolean; withoutSkills?: boolean } = {},
 ): { ctx: Context; rec: Recorder } {
@@ -162,7 +168,9 @@ export function stubContext(
     // danger-full-access short-circuits confinement, keeping this suite off the
     // host's sandbox backend; confinement itself is covered by booting dsh.
     sandbox: { confine: (argv: string[]) => ({ argv }) },
-    sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' as const, workspaceRoot: process.cwd() }) },
+    // A throwaway workspace, so the kernel's output directory lands in a temp
+    // tree rather than writing biomni-out/ into the repo during a test run.
+    sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' as const, workspaceRoot }) },
     systemPrompt: {
       section: (section: { name: string; order: number; text: string }) => {
         rec.sections.push(section)

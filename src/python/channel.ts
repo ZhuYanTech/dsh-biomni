@@ -26,6 +26,21 @@ export interface WorkerFrame {
    * older than this field; the notice degrades to omitting the number.
    */
   outputChars?: number
+  /**
+   * Files this call wrote into the session's output directory, newest first
+   * and capped by the worker.
+   */
+  artifacts?: WorkerArtifact[]
+  /** How many changed in total, when more than `artifacts` carries. */
+  artifactCount?: number
+}
+
+/** One file a call produced. */
+export interface WorkerArtifact {
+  /** Path relative to the output directory. */
+  name: string
+  bytes: number
+  action: 'wrote' | 'updated'
 }
 
 interface Waiter {
@@ -129,6 +144,35 @@ export function truncationNotice(frame: WorkerFrame): string {
     + 'you need.]'
 }
 
+/** Bytes as a short human string. */
+function formatBytes(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`
+}
+
+/**
+ * The artifact line.
+ *
+ * A plot cannot be printed and a big table gets truncated, so before this the
+ * honest answer to "where is the result" was "somewhere on disk". Naming the
+ * files the call actually wrote closes that, and costs nothing on the calls
+ * that write nothing — which is most of them.
+ */
+export function artifactNotice(frame: WorkerFrame): string | undefined {
+  const artifacts = frame.artifacts ?? []
+  if (artifacts.length === 0) return undefined
+  const listed = artifacts.map(a => `${a.name} (${formatBytes(a.bytes)}${a.action === 'updated' ? ', updated' : ''})`)
+  const total = frame.artifactCount ?? artifacts.length
+  const more = total > artifacts.length ? `, and ${total - artifacts.length} more` : ''
+  return `[wrote to the session output directory: ${listed.join(', ')}${more}]`
+}
+
 /** Render one worker frame as the model-facing result string. */
 export function renderFrame(frame: WorkerFrame): string {
   const parts: string[] = []
@@ -136,6 +180,9 @@ export function renderFrame(frame: WorkerFrame): string {
   if (frame.truncated) parts.push(truncationNotice(frame))
   if (frame.value !== null && frame.value !== undefined) parts.push(frame.value)
   if (frame.error !== null && frame.error !== undefined) parts.push(frame.error.replace(/\n$/, ''))
+  // Last, so it reads as a footnote to the result rather than part of it.
+  const artifacts = artifactNotice(frame)
+  if (artifacts !== undefined) parts.push(artifacts)
   if (parts.length === 0) return '(no output)'
   return parts.join('\n')
 }

@@ -34,6 +34,7 @@ import {
   type ProbeReport,
 } from '../prefs-shared.ts'
 import { api, BiomniApiError, type ProbeResult } from './api.ts'
+import { Artifacts } from './Artifacts.tsx'
 import { DataLake } from './DataLake.tsx'
 import { BIOMNI_PREFS_DEFAULTS, parsePrefs } from './prefs.ts'
 import { t } from './locales.ts'
@@ -293,8 +294,10 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
         <ProbeView result={probe} copied={copied} onCopied={setCopied} />
       </section>
 
-      {/* Last, and deliberately so: the two groups above report on the
-          environment, and this one changes it. */}
+      {/* Last, and deliberately so: the groups above report on the environment,
+          and these two are about the work — what came out, and what is
+          available to work on. */}
+      <Artifacts />
       <DataLake />
     </div>
   )

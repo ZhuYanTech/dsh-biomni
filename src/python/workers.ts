@@ -13,8 +13,9 @@ import type {
   Context,
   SubprocessHandle,
 } from '../context-types.ts'
+import { join } from 'node:path'
 import { WorkerChannel } from './channel.ts'
-import { WORKER_PATH } from './paths.ts'
+import { OUTPUT_DIR_NAME, WORKER_PATH } from './paths.ts'
 
 /** The subset of the resolved settings a worker needs at spawn time. */
 export interface WorkerConfig {
@@ -72,7 +73,12 @@ export function pythonWorkers(ctx: WorkerHost, config: WorkerConfig): WorkerPool
     // already running keeps the confinement it was born with; a mode change
     // takes effect on the next reset.
     const policy = ctx.sandboxPolicy.resolve()
-    const base = [config.python, '-u', WORKER_PATH]
+    // Under the workspace root, so results land where the user already looks
+    // rather than in a plugin-private directory they have to be told about.
+    // Passed to the worker rather than agreed by convention: two places
+    // computing the same path is how they come to disagree.
+    const outDir = join(policy.workspaceRoot, OUTPUT_DIR_NAME)
+    const base = [config.python, '-u', WORKER_PATH, outDir]
     const argv = policy.mode === 'danger-full-access'
       ? base
       : ctx.sandbox.confine(base, { mode: policy.mode, workspaceRoot: policy.workspaceRoot }).argv

@@ -21,14 +21,24 @@
  * Nothing here patches the harness. The plugin is composed into a profile as an
  * ordinary out-of-tree bundle.
  */
+import { join } from 'node:path'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { Context } from './context-types.ts'
+import type { BiomniHttpResponse, Context } from './context-types.ts'
 import { BIOMNI_PREFS_NS, Config, PrefsSchema, prefsBaseOf, type BiomniConfig } from './config.ts'
 import type { BiomniPrefs } from './prefs-shared.ts'
 import { buildApi, type BiomniSettingsFace } from './api.ts'
 import { shellPythonGuard } from './guard.ts'
+import {
+  contentTypeOf,
+  listArtifacts,
+  MAX_DOWNLOAD_BYTES,
+  readArtifact,
+  renderArtifacts,
+  resolveArtifact,
+} from './artifacts.ts'
 import { fetchDatasets, listDatasets, renderDatasets } from './datasets.ts'
 import { probeEnvironment, renderReport } from './probe.ts'
+import { OUTPUT_DIR_NAME } from './python/paths.ts'
 import { pythonWorkers } from './python/workers.ts'
 import { runPythonTool } from './python/tool.ts'
 import { createBiomniSkillProvider } from './skills/provider.ts'
@@ -68,6 +78,9 @@ export const inject = [
 
 /** The route prefix this plugin owns. */
 const API_PREFIX = '/biomni/api'
+
+/** The one GET under that prefix: `?name=` downloads an artifact. */
+const ARTIFACT_DOWNLOAD = 'artifacts.get'
 
 export function apply(ctx: Context, config: BiomniConfig): void {
   // ── Settings ─────────────────────────────────────────────────────────────
@@ -180,7 +193,68 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     },
   }))
 
+  // The third read-only command. `/biomni` answers "can this machine run the
+  // tools", `/biomni-datasets` "what data is here", and this one "what has the
+  // work produced" — which before 0.2.0 had no answer at all.
+  ctx.effect(() => ctx.commands.register({
+    name: 'biomni-out',
+    description: 'list what the interpreter has written to this session\'s output directory',
+    recordInput: false,
+    handler: async () => {
+      try {
+        return { kind: 'success', text: renderArtifacts(await listArtifacts(outputRoot())) }
+      } catch (cause) {
+        return {
+          kind: 'error',
+          text: `Could not read the output directory: ${String((cause as Error | undefined)?.message ?? cause)}`,
+        }
+      }
+    },
+  }))
+
   // ── The fenced JSON API ──────────────────────────────────────────────────
+  // Where the interpreter writes results. Resolved from the same sandbox policy
+  // the worker is spawned under, so the directory the plugin lists is the one
+  // the worker was handed.
+  const outputRoot = (): string => join(ctx.sandboxPolicy.resolve().workspaceRoot, OUTPUT_DIR_NAME)
+
+  /**
+   * Serve one artifact for download.
+   *
+   * Every failure is a 404 rather than a distinguishing error: the name comes
+   * off the wire, and telling a caller apart "not there" from "outside the
+   * root" would turn this into a probe for the surrounding filesystem.
+   */
+  const serveArtifact = async (name: string, res: BiomniHttpResponse): Promise<void> => {
+    const path = await resolveArtifact(outputRoot(), name)
+    if (path === undefined) {
+      writeJson(res, 404, { ok: false, error: { code: 'not-found', message: 'no such artifact' } })
+      return
+    }
+    const result = await readArtifact(path)
+    if ('tooLarge' in result) {
+      writeJson(res, 413, {
+        ok: false,
+        error: {
+          code: 'too-large',
+          message: `${name} is ${result.tooLarge} bytes, over the ${MAX_DOWNLOAD_BYTES} download limit; `
+            + `open it directly at ${path}`,
+        },
+      })
+      return
+    }
+    res.writeHead(200, {
+      'content-type': contentTypeOf(name),
+      'content-length': String(result.body.byteLength),
+      // Always an attachment. These are model-written files served from the
+      // harness's own origin, and rendering one in place would make writing a
+      // file a way to run script there.
+      'content-disposition': `attachment; filename="${name.split('/').pop() ?? 'artifact'}"`,
+      'x-content-type-options': 'nosniff',
+    })
+    res.end(result.body)
+  }
+
   /** What both the dataset catalog and the fetcher need, read live. */
   const datasetRunner = (signal?: AbortSignal) => ({
     ctx,
@@ -195,6 +269,7 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     probe: python => probeEnvironment(ctx, python, live.dataPath),
     datasets: () => listDatasets(datasetRunner()),
     fetch: (names, acceptNonCommercial) => fetchDatasets(datasetRunner(), names, acceptNonCommercial),
+    artifacts: () => listArtifacts(outputRoot()),
   })
 
   // ── The skill catalog ────────────────────────────────────────────────────
@@ -237,11 +312,25 @@ export function apply(ctx: Context, config: BiomniConfig): void {
           writeJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
           return
         }
+        const url = new URL(req.url ?? '/', 'http://dsh.internal')
+
+        // The one GET on this prefix. A download is a browser navigation, so
+        // it cannot be a POST like every other method here; it is kept to a
+        // single named path rather than making the whole prefix method-open.
+        if (url.pathname === `${API_PREFIX}/${ARTIFACT_DOWNLOAD}`) {
+          if (req.method !== 'GET') {
+            writeJson(res, 405, { ok: false, error: { code: 'method-error', message: 'method not allowed' } })
+            return
+          }
+          await serveArtifact(url.searchParams.get('name') ?? '', res)
+          return
+        }
+
         if (req.method !== 'POST') {
           writeJson(res, 405, { ok: false, error: { code: 'method-error', message: 'method not allowed' } })
           return
         }
-        const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
+        const pathname = url.pathname
         const method = pathname.startsWith(`${API_PREFIX}/`)
           ? pathname.slice(API_PREFIX.length + 1)
           : undefined

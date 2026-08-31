@@ -67,6 +67,25 @@ For large results print a summary rather than the whole object: `df.shape`,
 `df.head()`, `len(hits)`, the first few records. Output is capped, and a clipped dump
 is worse than a deliberate summary.
 
+## Anything that is not short text goes in a file
+
+`BIOMNI_OUT` is already bound in the namespace — a directory the operator can see and
+download from. Write results there instead of trying to print them:
+
+```python
+fig.savefig(BIOMNI_OUT / "volcano.png", dpi=150)
+df.to_csv(BIOMNI_OUT / "differential_hits.csv", index=False)
+records.to_parquet(BIOMNI_OUT / "annotated.parquet")
+```
+
+Files written there are named back to you after the call, with their sizes, so you know
+the write landed without reading the file again. Then print the *summary* — the shape,
+the top rows, the count — and let the file carry the rest.
+
+Nothing stops you writing elsewhere, but nothing reports on it either. A path you chose
+yourself is one you will have to remember and describe; one under `BIOMNI_OUT` is one
+the operator can open.
+
 Print like a research log: what you are about to do, the parameters used, the shape of
 what came back. The transcript is the record of the analysis.
 

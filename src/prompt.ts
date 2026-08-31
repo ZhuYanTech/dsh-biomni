@@ -21,6 +21,11 @@ export const DEFAULT_TOOL_DESCRIPTION = [
   '',
   'Returns whatever the code writes to stdout and stderr, so print anything you need to',
   'see; a trailing bare expression additionally reports its repr, like a REPL.',
+  '',
+  'For anything that is not short text — a plot, a table, a fitted model, a FASTA file —',
+  'write it to the `BIOMNI_OUT` directory, which is already bound in the namespace. Files',
+  'written there are reported back to you by name and size, and the user can see and',
+  'download them. Printing is capped, so a large result printed is a large result lost.',
 ].join('\n')
 
 /**
@@ -97,6 +102,22 @@ passing one off as the tool's output misrepresents the result.
 Some functions call a language model internally to turn a prompt into a query. Those
 need their own credentials and may fail with a missing-package error; prefer the direct
 API functions when one exists.
+
+## Where results go
+
+Anything that is not short text belongs in a file, not in \`print\`. The namespace has
+\`BIOMNI_OUT\` already bound to a directory for exactly this:
+
+    fig.savefig(BIOMNI_OUT / "volcano.png", dpi=150)
+    df.to_csv(BIOMNI_OUT / "hits.csv", index=False)
+
+Files written there are named back to you after the call, and the operator can browse
+and download them. This is the answer to a result too big to print: \`run_python\` caps
+its output, so a large table printed is a large table truncated, while the same table
+written out is a table anyone can open.
+
+Nothing stops you writing elsewhere, but nothing reports on it either — a file outside
+that directory is one you will have to describe from memory.
 
 ## Two more catalogs, on the same terms
 

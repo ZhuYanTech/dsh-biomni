@@ -105,6 +105,20 @@ Biomni 软件库里那 18 个 CLI（samtools / bwa / bedtools…）**本来就�
 
 **体积必须来自清单，不能现问网络。** Biomni 自己的 `env_desc` 不记体积（它的下载器整套拉，不需要），所以 `manifest()` 会把捕获到的体积**合并**进 live 目录。少了这步，装了 Biomni 反而比不装更难用——这种反转没人会想到去查，`tests/probe.spec.ts` 钉着。
 
+## 4f. 产出目录：唯一一条把名字变成文件路径的通道
+
+`src/artifacts.ts` 的 `resolveArtifact` 是全项目唯一一处「HTTP 来的名字 → 文件系统路径」的转换，所以规则最紧：
+
+1. **两边都走 `realpath` 再比较，不能只用 `path.resolve`。** `resolve` 只在字面上折叠 `..`，**不跟随符号链接**——而往这个目录里写东西的正是一个能调 `os.symlink` 的 agent。`BIOMNI_OUT/notes.txt -> /etc/passwd` 能通过所有字面检查。这个洞是 0.2.0 写测试时发现的，`tests/kernel.spec.ts` 用**真实 run_python 调用创建的链接**钉着。
+2. **比较必须带分隔符**：`startsWith(base)` 会放过同级的 `biomni-out-evil`。
+3. **所有失败一律 404**，不区分「不存在」和「越界」——否则这条路由就成了探测周边文件系统的工具。
+
+**永远不发 `text/html`。** 这些是模型写的文件，从 harness 自己的 origin 提供；就地渲染等于把「写文件」变成在那个 origin 上执行脚本的通道。一律 `attachment` + `nosniff`，认不出的扩展名走 `application/octet-stream`。
+
+**下载有 100 MB 上限，因为响应接口只收整个 body、不支持流式。** 超过就拒绝并给出绝对路径——文件本来就在用户自己的工作区里，浏览器下载从头到尾只是个便利。
+
+**目录只读。** agent 写，operator 看和取。这个页面上不应该出现删除按钮：它会是唯一一个会销毁工作成果的控件，而用户手边就有 `rm`。
+
 ## 4c. 两种安装形态的分工，以及一条硬约束
 
 | 形态 | 承载 | 作用域 |

@@ -7,14 +7,16 @@
  * in biomni.spec.ts, which skips when the interpreter has no Biomni.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { apply, Config, inject, name } from '../src/index.ts'
 import type { BiomniConfig } from '../src/config.ts'
-import { stubContext, stubOwner } from './stubs.ts'
+import { listArtifacts, resolveArtifact } from '../src/artifacts.ts'
+import { OUTPUT_DIR_NAME } from '../src/python/paths.ts'
+import { stubContext, stubOwner, workspaceRoot } from './stubs.ts'
 
 const PYTHON = process.env.DSH_BIOMNI_PYTHON ?? 'python3'
 
@@ -250,5 +252,90 @@ describe('the dataset fetcher', () => {
     const lake = join(root, 'biomni_data', 'data_lake')
     const listing = existsSync(lake) ? readdirSync(lake) : []
     expect(listing).toEqual([])
+  })
+})
+
+/**
+ * The artifact outlet, driven through the real tool.
+ *
+ * `run_python` returns text capped at 16k characters, so a plot cannot come
+ * back at all and a real table comes back truncated. The interpreter writes to
+ * a directory instead, and the point of these tests is that the write is
+ * REPORTED — a file the model does not know it wrote is barely better than no
+ * file.
+ */
+describe('the artifact outlet', () => {
+  const outDir = join(workspaceRoot, OUTPUT_DIR_NAME)
+
+  it('binds the output directory in the namespace', async () => {
+    // Bound, not merely documented: a path the model reconstructs from prose
+    // is a path it gets wrong, and then the file lands where nothing looks.
+    const result = await run('print(BIOMNI_OUT)')
+    expect(result.trim()).toBe(outDir)
+  })
+
+  it('names what a call wrote, with sizes', async () => {
+    const result = await run(
+      'BIOMNI_OUT.mkdir(parents=True, exist_ok=True)\n'
+      + '(BIOMNI_OUT / "hits.csv").write_text("gene,lfc\\nTP53,2.1\\n")\n'
+      + 'print("saved")',
+    )
+    expect(result).toContain('saved')
+    expect(result).toMatch(/wrote to the session output directory: hits\.csv \(\d+ B\)/)
+  })
+
+  it('says nothing when a call writes nothing', async () => {
+    // The cost of this feature has to be zero on the calls that do not use it,
+    // which is most of them.
+    const result = await run('print("just thinking")')
+    expect(result.trim()).toBe('just thinking')
+    expect(result).not.toContain('output directory')
+  })
+
+  it('reports a rewrite as updated rather than as a new file', async () => {
+    await run('(BIOMNI_OUT / "notes.txt").write_text("one")')
+    const result = await run('(BIOMNI_OUT / "notes.txt").write_text("two")\nprint("again")')
+    expect(result).toMatch(/notes\.txt \(\d+ B, updated\)/)
+  })
+
+  it('sees files written into subdirectories', async () => {
+    // A figure saved under figures/ is still a result.
+    const result = await run(
+      '(BIOMNI_OUT / "figures").mkdir(parents=True, exist_ok=True)\n'
+      + '(BIOMNI_OUT / "figures" / "volcano.png").write_bytes(b"x" * 4096)\n'
+      + 'print("plotted")',
+    )
+    expect(result).toContain('figures/volcano.png')
+  })
+
+  it('hands those files to the listing the panel and command read', async () => {
+    // The two halves have to agree: what the tool result claimed was written
+    // is what the operator can then find and download.
+    const listing = await listArtifacts(outDir)
+    const names = listing.entries.map(entry => entry.name)
+    expect(names).toContain('hits.csv')
+    expect(names).toContain('figures/volcano.png')
+    await expect(resolveArtifact(outDir, 'figures/volcano.png')).resolves.toBeDefined()
+  })
+
+  it('refuses to serve a symlink the interpreter planted', async () => {
+    // The agent writing into this directory can call os.symlink, and
+    // path.resolve does not follow links — so the containment check resolves
+    // both sides through the filesystem. Exercised here against a link an
+    // actual run_python call created, not a synthetic one.
+    const target = join(workspaceRoot, 'outside-secret.txt')
+    writeFileSync(target, 'not yours')
+    const result = await run(
+      'import os\n'
+      + 'BIOMNI_OUT.mkdir(parents=True, exist_ok=True)\n'
+      + 'link = BIOMNI_OUT / "innocent.txt"\n'
+      + 'link.unlink(missing_ok=True)\n'
+      + `os.symlink(${JSON.stringify(target)}, link)\n`
+      + 'print("linked")',
+    )
+    // Symlink creation can be unavailable; the refusal is what matters.
+    if (result.includes('linked')) {
+      await expect(resolveArtifact(outDir, 'innocent.txt')).resolves.toBeUndefined()
+    }
   })
 })

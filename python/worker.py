@@ -11,7 +11,8 @@ Protocol, one JSON object per line in each direction:
 
   request   {"id": str, "code": str}
   response  {"id": str, "ok": bool, "output": str, "value": str|null,
-             "error": str|null, "truncated": bool, "outputChars": int}
+             "error": str|null, "truncated": bool, "outputChars": int,
+             "artifacts": [{"name": str, "bytes": int, "action": str}]}
 
 ``output`` is everything the code wrote to stdout/stderr, capped at
 ``MAX_OUTPUT_CHARS`` with ``outputChars`` carrying the true length so the
@@ -19,11 +20,19 @@ caller can say what was lost. ``value`` is the
 repr of the final expression when the snippet ends in one, so a bare
 ``df.head()`` reads back like a REPL. ``error`` carries the formatted
 traceback with this worker's own frames stripped.
+
+``artifacts`` names the files the snippet wrote into the session's output
+directory. Results that are not text have nowhere else to go: printing a plot
+is impossible and printing a big table is capped, so before this the only
+honest answer was "it is somewhere on disk". The directory is bound in the
+namespace as ``BIOMNI_OUT`` and reported back per call, which costs nothing on
+the calls that write nothing.
 """
 
 import ast
 import json
 import os
+import pathlib
 import sys
 import tempfile
 import traceback
@@ -36,8 +45,26 @@ _PROTOCOL = os.fdopen(os.dup(1), "w", encoding="utf-8", buffering=1)
 _NULL_FD = os.open(os.devnull, os.O_WRONLY)
 os.dup2(_NULL_FD, 1)
 
+#: Where the agent is told to put results. Passed by the host so the plugin and
+#: the worker cannot disagree about the location; created lazily, because a
+#: session that never writes anything should not leave an empty directory in
+#: someone's workspace.
+OUT_DIR = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else pathlib.Path.cwd()
+
 # The persistent namespace. Everything the agent defines accumulates here.
-NAMESPACE = {"__name__": "__dsh_python__", "__builtins__": __builtins__}
+#
+# BIOMNI_OUT is bound rather than only documented: a path the model has to
+# reconstruct from prose is a path it will get wrong, and then the file lands
+# somewhere nothing reports on.
+NAMESPACE = {
+    "__name__": "__dsh_python__",
+    "__builtins__": __builtins__,
+    "BIOMNI_OUT": OUT_DIR,
+}
+
+#: Most files a call is expected to produce. A loop that writes thousands is a
+#: mistake worth naming rather than a list worth rendering in full.
+MAX_ARTIFACTS = 20
 
 #: Character cap on one call's captured output.
 #:
@@ -51,6 +78,47 @@ NAMESPACE = {"__name__": "__dsh_python__", "__builtins__": __builtins__}
 #: or a few hundred lines of log, and small enough that hitting it is a nudge
 #: rather than a catastrophe. The truncation notice says how to get the rest.
 MAX_OUTPUT_CHARS = 16_000
+
+
+def _snapshot():
+    """{relative name: (size, mtime_ns)} for the output tree, or {} when absent.
+
+    Recursive, so a call that writes into a subdirectory is still reported.
+    Never raises: an unreadable output directory must not fail the execution
+    that happened to run beside it.
+    """
+    if not OUT_DIR.is_dir():
+        return {}
+    out = {}
+    try:
+        for path in OUT_DIR.rglob("*"):
+            try:
+                if not path.is_file():
+                    continue
+                stat = path.stat()
+                out[str(path.relative_to(OUT_DIR))] = (stat.st_size, stat.st_mtime_ns)
+            except OSError:
+                continue
+    except OSError:
+        return {}
+    return out
+
+
+def _artifacts(before, after):
+    """What changed between two snapshots, newest first.
+
+    Only additions and modifications. A deletion is not a result, and reporting
+    it would turn tidying up into noise.
+    """
+    changed = []
+    for name, (size, mtime) in after.items():
+        prior = before.get(name)
+        if prior is None:
+            changed.append((mtime, {"name": name, "bytes": size, "action": "wrote"}))
+        elif prior != (size, mtime):
+            changed.append((mtime, {"name": name, "bytes": size, "action": "updated"}))
+    changed.sort(key=lambda item: -item[0])
+    return [entry for _, entry in changed[:MAX_ARTIFACTS]], len(changed)
 
 
 def _send(payload):
@@ -88,6 +156,7 @@ def _format_error(exc):
 
 def _execute(code):
     """Run one snippet with stdout/stderr captured at the descriptor level."""
+    before = _snapshot()
     saved_stdout, saved_stderr = sys.stdout, sys.stderr
     saved_out_fd, saved_err_fd = os.dup(1), os.dup(2)
 
@@ -132,12 +201,18 @@ def _execute(code):
         # the top.
         output = output[:MAX_OUTPUT_CHARS]
 
+    # After the capture is torn down, so a slow flush cannot be mistaken for a
+    # file the snippet wrote.
+    artifacts, total = _artifacts(before, _snapshot())
+
     return {
         "output": output,
         "value": value,
         "error": error,
         "truncated": truncated,
         "outputChars": full_length,
+        "artifacts": artifacts,
+        "artifactCount": total,
     }
 
 
@@ -163,6 +238,8 @@ def main():
             "error": result["error"],
             "truncated": result["truncated"],
             "outputChars": result["outputChars"],
+            "artifacts": result["artifacts"],
+            "artifactCount": result["artifactCount"],
         })
 
 
