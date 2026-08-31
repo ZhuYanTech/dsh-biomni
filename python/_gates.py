@@ -31,6 +31,7 @@ taking the caller down.
 
 import ast
 import importlib.util
+import json
 import os
 import pathlib
 import sys
@@ -41,6 +42,7 @@ __all__ = [
     "data_lake_dir",
     "data_lake_entries",
     "library_entries",
+    "manifest",
     "spec_exists",
     "stdlib_names",
     "tool_dir",
@@ -215,12 +217,73 @@ def _biomni_root():
     return pathlib.Path(list(spec.submodule_search_locations)[0])
 
 
-def _env_desc():
-    """(full, commercial) descriptor dicts, each possibly empty."""
+#: The manifest captured into this repo by scripts/vendor-manifest.py. Same
+#: relative position in the published package as in the source tree.
+VENDORED_MANIFEST = pathlib.Path(__file__).resolve().parent.parent / "data" / "biomni-manifest.json"
+
+
+def _vendored():
+    """The shipped manifest, or None when it is absent or unreadable.
+
+    Never allowed to raise: a missing or corrupt copy must degrade to "no
+    manifest", not take the probe down with it.
+    """
+    try:
+        with open(VENDORED_MANIFEST, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def manifest():
+    """Biomni's asset manifests, and where they came from.
+
+    Returns ``(datasets, libraries, commercial, source, version)`` where
+    ``source`` is one of:
+
+        'live'      read from an installed biomni; always matches that install
+        'vendored'  read from the copy shipped with this plugin
+        'none'      neither available
+
+    A live install ALWAYS wins. The shipped copy is a fallback so the data lake
+    and software catalogs work without a 1.3 GB install — it is not an
+    override, because a manifest that disagrees with the installed library is
+    exactly the kind of confident wrong answer this plugin exists to prevent.
+
+    ``commercial`` is the set of dataset names cleared for commercial use, or
+    None when this source does not say — which means unknown, not unrestricted.
+    """
     root = _biomni_root()
-    if root is None:
-        return {}, {}
-    return _literal_dicts(root / "env_desc.py"), _literal_dicts(root / "env_desc_cm.py")
+    if root is not None:
+        full = _literal_dicts(root / "env_desc.py")
+        cm = _literal_dicts(root / "env_desc_cm.py")
+        datasets = full.get("data_lake_dict")
+        libraries = full.get("library_content_dict")
+        if datasets or libraries:
+            allowed = cm.get("data_lake_dict")
+            return (
+                datasets or {},
+                libraries or {},
+                None if allowed is None else set(allowed),
+                "live",
+                biomni_version() or "unknown",
+            )
+
+    data = _vendored()
+    if data is not None:
+        allowed = data.get("commercialDatasets")
+        return (
+            data.get("datasets") or {},
+            data.get("libraries") or {},
+            None if allowed is None else set(allowed),
+            "vendored",
+            str(data.get("biomni", "unknown")),
+        )
+
+    return {}, {}, None, "none", "unknown"
 
 
 def data_lake_dir(explicit=None):
@@ -238,7 +301,7 @@ def data_lake_dir(explicit=None):
 def data_lake_entries(explicit=None):
     """Advertised datasets joined with what is actually on disk.
 
-    Returns ``{"path": str, "exists": bool, "present": int, "entries": [...]}``
+    Returns ``{"path", "exists", "present", "source", "entries"}``
     where each entry is::
 
         name        the file name Biomni advertises
@@ -251,9 +314,7 @@ def data_lake_entries(explicit=None):
     an answer, not a failure.
     """
     directory = data_lake_dir(explicit)
-    full, commercial = _env_desc()
-    advertised = full.get("data_lake_dict", {})
-    allowed = commercial.get("data_lake_dict")
+    advertised, _, allowed, source, _ = manifest()
 
     entries = []
     for name in sorted(advertised):
@@ -274,6 +335,10 @@ def data_lake_entries(explicit=None):
         "path": str(directory),
         "exists": directory.is_dir(),
         "present": sum(1 for entry in entries if entry["present"]),
+        # Which manifest answered. A reader has to be able to tell "this
+        # environment has no Biomni, so the list is the shipped one" from
+        # "this is what the installed Biomni says".
+        "source": source,
         "entries": entries,
     }
 
@@ -320,8 +385,7 @@ def library_entries():
     """
     import shutil
 
-    full, _ = _env_desc()
-    advertised = full.get("library_content_dict", {})
+    _, advertised, _, _, _ = manifest()
     has_r = shutil.which("Rscript") is not None
 
     entries = []

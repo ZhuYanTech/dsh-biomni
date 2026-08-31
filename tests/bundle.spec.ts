@@ -112,3 +112,55 @@ describe('publish metadata', () => {
     }
   })
 })
+
+/**
+ * The vendored asset manifest.
+ *
+ * It is data captured from Biomni, shipped so the data lake and software
+ * catalogs work without a 1.3 GB install. Being data, nothing type-checks it —
+ * these assertions are the only thing standing between a bad capture and a
+ * catalog that confidently describes nothing.
+ */
+describe('the vendored manifest', () => {
+  const manifest = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../data/biomni-manifest.json', import.meta.url)), 'utf8'),
+  ) as {
+    biomni: string
+    datasets: Record<string, string>
+    commercialDatasets: string[] | null
+    libraries: Record<string, string>
+  }
+
+  it('carries both catalogs and the version they came from', () => {
+    expect(manifest.biomni).toMatch(/^\d+\.\d+\.\d+/)
+    expect(Object.keys(manifest.datasets).length).toBeGreaterThan(50)
+    expect(Object.keys(manifest.libraries).length).toBeGreaterThan(100)
+  })
+
+  it('describes every entry it lists', () => {
+    // An entry with no description is worse than an absent one: it reaches the
+    // model as a name with nothing to judge relevance by.
+    for (const [name, description] of Object.entries(manifest.datasets)) {
+      expect(description.length, `dataset ${name} has no description`).toBeGreaterThan(10)
+    }
+    for (const [name, description] of Object.entries(manifest.libraries)) {
+      expect(description.length, `library ${name} has no description`).toBeGreaterThan(10)
+    }
+  })
+
+  it('keeps the commercial subset inside the full set', () => {
+    // A licence allowlist naming a dataset that is not advertised means the two
+    // halves were captured from different versions.
+    expect(manifest.commercialDatasets).not.toBeNull()
+    for (const name of manifest.commercialDatasets!) {
+      expect(manifest.datasets, `${name} is cleared but not advertised`).toHaveProperty(name)
+    }
+    expect(manifest.commercialDatasets!.length).toBeLessThan(Object.keys(manifest.datasets).length)
+  })
+
+  it('ships in the package', () => {
+    // The fallback is worthless if it is not in the tarball, and that failure
+    // only shows up on a machine without Biomni — the exact case it exists for.
+    expect(pkg.files).toContain('data/biomni-manifest.json')
+  })
+})

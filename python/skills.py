@@ -14,11 +14,14 @@ this environment actually HAS:
     (the curated subset Biomni exposes; the modules define more public
     functions, the rest being helpers Biomni does not surface), joined with the
     callability verdicts from `_gates`,
-  * the data lake — 76 datasets from `env_desc.data_lake_dict`, joined with
-    what is actually on disk under the configured data root, and independently
-    with the commercial-use subset in `env_desc_cm`,
-  * the software library — 113 packages and CLI tools from
-    `env_desc.library_content_dict`, joined with what is actually installed.
+  * the data lake — 76 datasets, joined with what is actually on disk under
+    the configured data root, and independently with the commercial-use subset,
+  * the software library — 113 packages and CLI tools, joined with what is
+    actually installed.
+
+The last two read Biomni's MANIFEST, which this plugin also ships a copy of, so
+they answer with no Biomni installed. The tool functions cannot: they are real
+Python that has to import.
 
 All three verdicts come from `_gates`, the same module the environment report
 reads, so the skill catalog and the Settings page cannot disagree about what
@@ -82,19 +85,23 @@ def _parameter(raw, with_default):
 
 
 def catalog(data_path=None):
+    # The data lake and the software library come from the MANIFEST, which is
+    # shipped with this plugin as a fallback. Both therefore work with no
+    # Biomni installed at all — which is the common starting state, and the one
+    # where knowing what is already on the machine helps most.
+    datasets, libraries, _, source, manifest_version = _gates.manifest()
     report = {
         "biomni": _gates.biomni_version(),
+        "manifest": {"source": source, "biomni": manifest_version},
         "modules": [],
-        "dataLake": {"path": str(_gates.data_lake_dir(data_path)), "exists": False, "present": 0, "entries": []},
-        "libraries": [],
+        "dataLake": _gates.data_lake_entries(data_path),
+        "libraries": _gates.library_entries(),
     }
+
+    # The tool modules are different: they are real Python that has to import,
+    # so they need the library actually present.
     if report["biomni"] is None:
         return report
-
-    # These two read env_desc rather than the tool tree, so they are filled in
-    # even when biomni ships no tool_description directory at all.
-    report["dataLake"] = _gates.data_lake_entries(data_path)
-    report["libraries"] = _gates.library_entries()
 
     directory = _gates.tool_dir()
     if directory is None:

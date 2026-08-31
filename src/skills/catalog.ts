@@ -96,10 +96,31 @@ export interface CatalogLibrary {
   available: boolean | null
 }
 
+/** Where the asset manifest came from, and which Biomni it describes. */
+export interface CatalogManifest {
+  /**
+   * `live` when read from an installed Biomni, `vendored` when read from the
+   * copy shipped with this plugin, `none` when neither was available.
+   *
+   * This is reported rather than hidden because the two are not
+   * interchangeable: a vendored manifest describes the Biomni it was captured
+   * from, which may not be the one a user later installs.
+   */
+  source: 'live' | 'vendored' | 'none'
+  /** The Biomni version the manifest describes. */
+  biomni: string
+}
+
 /** The whole catalog. */
 export interface SkillCatalog {
-  /** Installed biomni version; null when the interpreter has none. */
+  /**
+   * Installed biomni version; null when the interpreter has none. Only the
+   * MODULE skills need it — the data lake and software catalogs are
+   * manifest-backed and answer either way.
+   */
   biomni: string | null
+  /** Which manifest answered; absent from an older payload. */
+  manifest?: CatalogManifest
   modules: CatalogModule[]
   /** Biomni's data lake; absent from an older payload. */
   dataLake?: CatalogDataLake

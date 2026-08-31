@@ -60,11 +60,16 @@ def survey(data_path=None):
     }
 
     report["biomni"] = _gates.biomni_version()
-    if report["biomni"] is None:
-        return report
 
+    # Manifest-backed, so they are reported whether or not Biomni is installed.
+    _, _, _, source, manifest_version = _gates.manifest()
+    report["manifest"] = {"source": source, "biomni": manifest_version}
     report["dataLake"] = _data_lake(data_path)
     report["libraries"] = _libraries()
+
+    # The module survey needs the library itself.
+    if report["biomni"] is None:
+        return report
 
     missing = {}
     for module in _gates.analyze_modules():

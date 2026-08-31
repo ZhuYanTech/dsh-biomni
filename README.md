@@ -36,7 +36,7 @@ what it needs.
 | | |
 |---|---|
 | 🐍 **A Python interpreter that remembers** | One process per session. Imports, dataframes and fitted models survive from one call to the next, so the agent works in small steps instead of resending a script every time. |
-| 🧬 **21 research-function skills** | Biomni's biomedical library, one skill per module, carrying real signatures — parameter types, defaults, and what each one means. Loaded on demand, so 218 functions cost ~1.6k tokens of context instead of ~26k. |
+| 🧬 **21 research-function skills** | Biomni's biomedical library, one skill per module, carrying real signatures — parameter types, defaults, and what each one means. Loaded on demand, so 218 functions cost ~1.6k tokens of context instead of ~26k. *(Needs Biomni installed.)* |
 | 🗄️ **A data lake skill** | The biomedical datasets actually downloaded on this machine, with exact paths, sizes, and licence flags. Prefer local data over a web round trip. |
 | 🔧 **A software skill** | The bioinformatics packages and CLI tools actually installed here — so the agent reaches for `samtools` instead of reimplementing it. |
 | 🔍 **An honest environment report** | The `/biomni` command and a Settings page telling you exactly what works, what doesn't, and which package would fix it. |
@@ -68,6 +68,11 @@ script for it.
 </details>
 
 ### 2. Build a Python environment with Biomni
+
+**Optional, and worth knowing why.** The data lake and software catalogs work
+immediately — they read a manifest shipped with the plugin, checked against your
+machine. Only the 21 tool-module skills need Biomni itself, because those are real
+Python that has to import.
 
 Biomni's library needs Python 3.11+. macOS ships 3.9, which will not do.
 

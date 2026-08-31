@@ -577,3 +577,62 @@ describe('the provider, with both extra assets', () => {
     expect(spawns[0]!).toHaveLength(2)
   })
 })
+
+// ── Working without Biomni ──────────────────────────────────────────────────
+// The data lake and the software library are manifest-backed, and this plugin
+// ships a copy of that manifest. So they answer on a machine with no Biomni at
+// all — which is the state every user starts in, and the one where "what is
+// already on this machine" is worth the most.
+
+/** What the catalog looks like on an interpreter with no Biomni installed. */
+const NO_BIOMNI: SkillCatalog = {
+  biomni: null,
+  manifest: { source: 'vendored', biomni: '0.0.8' },
+  modules: [],
+  dataLake: RICH.dataLake,
+  libraries: RICH.libraries,
+}
+
+describe('without Biomni installed', () => {
+  it('still advertises the data lake and the software library', async () => {
+    const { service } = stubSubprocess(NO_BIOMNI)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => 'python3', dataPath: () => '' },
+      stubControl(),
+    )
+    const names = (await candidatesOf(provider)).map(candidate => candidate.name)
+    expect(names).toContain('biomni-data-lake')
+    expect(names).toContain('biomni-software')
+    expect(names).toContain('biomni-workflow')
+  })
+
+  it('offers no module skills, because those need the library to import', () => {
+    // The asymmetry is the point: a dataset on disk is readable without Biomni,
+    // a `biomni.tool` function is not.
+    expect(advertisableModules(NO_BIOMNI)).toEqual([])
+  })
+
+  it('renders bodies with the manifest version rather than "null"', async () => {
+    const { service } = stubSubprocess(NO_BIOMNI)
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => 'python3', dataPath: () => '' },
+      stubControl(),
+    )
+    const candidates = await candidatesOf(provider)
+    const lake = await provider.get(candidates.find(c => c.name === 'biomni-data-lake')!, {})
+    expect(lake!.content).toContain('0.0.8')
+    expect(lake!.content).not.toContain('null')
+  })
+
+  it('is still an authoritative empty answer when the manifest is empty too', async () => {
+    // Nothing on the machine and nothing shipped: the shipped markdown skills
+    // remain, because how to organise the work does not depend on either.
+    const { service } = stubSubprocess({ biomni: null, modules: [] })
+    const provider = createBiomniSkillProvider(
+      { subprocess: service, python: () => 'python3', dataPath: () => '' },
+      stubControl(),
+    )
+    const listed = await provider.list({})
+    expect((listed as readonly SkillCandidate[]).map(c => c.name)).toEqual(['biomni-workflow'])
+  })
+})

@@ -74,15 +74,18 @@ export function renderReport(report: ProbeReport, prefs: BiomniPrefs): string {
 
   if (report.error !== undefined) return `${lines.join('\n')}\n\nProbe failed: ${report.error}`
 
-  if (report.biomni === null || report.biomni === undefined) {
+  const absent = report.biomni === null || report.biomni === undefined
+  if (absent) {
     lines.push('')
-    lines.push('Biomni is NOT installed in this interpreter.')
-    lines.push('Install it with python/requirements-biomni.txt, then point the')
+    lines.push('Biomni is NOT installed in this interpreter, so there are no tool-module')
+    lines.push('skills. Install it with python/requirements-biomni.txt, then point the')
     lines.push('`python` setting at that interpreter.')
-    return lines.join('\n')
+    lines.push('')
+    lines.push('The data lake and software figures below still hold: they come from the')
+    lines.push('manifest shipped with this plugin, checked against this machine.')
+  } else {
+    lines.push(`Biomni       ${report.biomni}`)
   }
-
-  lines.push(`Biomni       ${report.biomni}`)
 
   // Without these nothing imports at all, and the resulting error names neither.
   if (report.gate !== undefined && report.gate.length > 0) {
@@ -95,9 +98,11 @@ export function renderReport(report: ProbeReport, prefs: BiomniPrefs): string {
   const broken = report.modules.filter(module => !module.importable)
   const callable = report.totalFunctions - report.blockedFunctions
 
-  lines.push('')
-  lines.push(`Modules      ${usable.length}/${report.modules.length} importable`)
-  lines.push(`Functions    ${callable}/${report.totalFunctions} callable`)
+  if (report.modules.length > 0) {
+    lines.push('')
+    lines.push(`Modules      ${usable.length}/${report.modules.length} importable`)
+    lines.push(`Functions    ${callable}/${report.totalFunctions} callable`)
+  }
 
   if (broken.length > 0) {
     lines.push('')
@@ -129,7 +134,8 @@ export function renderReport(report: ProbeReport, prefs: BiomniPrefs): string {
       lines.push(`             ${dataLake.advertised} datasets are advertised and none are downloaded.`)
       lines.push('             Point the `dataPath` setting at the root holding biomni_data/.')
     } else {
-      lines.push(`Data lake    ${dataLake.present}/${dataLake.advertised} datasets at ${dataLake.path}`)
+      const via = report.manifest?.source === 'vendored' ? ' (shipped manifest)' : ''
+      lines.push(`Data lake    ${dataLake.present}/${dataLake.advertised} datasets at ${dataLake.path}${via}`)
       if (dataLake.restricted > 0) {
         lines.push(`             ${dataLake.restricted} of those are licensed for non-commercial use only.`)
       }

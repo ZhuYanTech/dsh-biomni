@@ -153,12 +153,14 @@ export function createBiomniSkillProvider(
         deps.onError?.(new Error(catalog.error))
         return { candidates: shipped, complete: false }
       }
-      // No biomni is an authoritative answer, not a failure: this interpreter
-      // genuinely has no Biomni modules to offer.
-      const biomni = catalog.biomni
-      if (biomni === null) return shipped
+      // No biomni means no MODULE skills — those are real Python that has to
+      // import. It does NOT mean no catalog: the data lake and the software
+      // library are manifest-backed, and knowing what is already on the machine
+      // is most useful precisely when Biomni is not installed yet.
+      const biomni = catalog.biomni ?? catalog.manifest?.biomni ?? 'unknown'
+      const modules = catalog.biomni === null ? [] : advertisableModules(catalog)
 
-      const generated = advertisableModules(catalog).map((module): SkillCandidate => ({
+      const generated = modules.map((module): SkillCandidate => ({
         name: skillNameOf(module.name),
         description: describeModule(module),
         invocation: { modelInvocable: true, userInvocable: true },

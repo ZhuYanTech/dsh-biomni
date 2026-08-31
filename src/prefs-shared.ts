@@ -114,6 +114,12 @@ export interface ProbeLibraryTally {
   unverified: number
 }
 
+/** Where the asset manifest came from (see CatalogManifest). */
+export interface ProbeManifest {
+  source: 'live' | 'vendored' | 'none'
+  biomni: string
+}
+
 /** The probe's whole report. */
 export interface ProbeReport {
   /** `sys.executable` of the probed interpreter. */
@@ -136,7 +142,9 @@ export interface ProbeReport {
    * import error names neither, which is why they are called out separately.
    */
   gate?: string[]
-  /** The data lake tally; absent when biomni itself is. */
+  /** Which manifest answered the data lake and software questions. */
+  manifest?: ProbeManifest
+  /** The data lake tally. Manifest-backed, so present with or without biomni. */
   dataLake?: ProbeDataLake
   /** Software tallies keyed by kind (`python` / `cli` / `r` / `unknown`). */
   libraries?: Record<string, ProbeLibraryTally>
