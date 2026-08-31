@@ -1,0 +1,38 @@
+# Optional Biomni dependencies, priced.
+#
+#   .venv/bin/pip install -r python/requirements-biomni-extras.txt   # all four
+#   .venv/bin/pip install rdkit                                      # or one
+#
+# These are NOT in the core tier because each was measured to cost far more than
+# it unlocks. "Exclusive" below is the disk that package and its otherwise-unused
+# dependencies add — what you actually get back by leaving it out. Together the
+# four are 485 MB for six functions, about 37% of the full install.
+#
+# Nothing breaks without them. The functions they gate are reported as blocked
+# by the probe and named in the skill bodies, along with the package to install
+# — which is the whole point of tracking availability separately from
+# advertisement.
+
+# 151 MB exclusive, for ONE function:
+#   pharmacology.calculate_physicochemical_properties
+# The DSH ecosystem also has dedicated rdkit / datamol / molfeat skills, which
+# is usually the better route to cheminformatics than this single wrapper.
+rdkit
+
+# 147 MB exclusive (drags in sympy, python-libsbml, optlang, swiglpk and a
+# sphinx docs toolchain), for TWO functions:
+#   systems_biology.perform_flux_balance_analysis
+#   systems_biology.simulate_metabolic_network_perturbation
+cobra
+
+# 119 MB exclusive (drags in selenium, trio and a websocket stack — it drives a
+# real browser), for ONE function:
+#   literature.query_scholar
+# Google Scholar scraping is fragile by nature; prefer a literature MCP server
+# or biomni's own query_pubmed / query_arxiv, which are already in core.
+scholarly
+
+# 68 MB exclusive, for TWO functions:
+#   pharmacology.analyze_xenograft_tumor_growth_inhibition
+#   pharmacology.perform_mwas_cyp2c19_metabolizer_status
+statsmodels

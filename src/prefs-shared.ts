@@ -142,6 +142,12 @@ export interface ProbeReport {
    * import error names neither, which is why they are called out separately.
    */
   gate?: string[]
+  /**
+   * Exclusive disk cost, in MB, of the missing packages deliberately left out
+   * of the core requirements tier. Present only for those; a package absent
+   * from this map is either installed or cheap.
+   */
+  optionalCostMb?: Record<string, number>
   /** Which manifest answered the data lake and software questions. */
   manifest?: ProbeManifest
   /** The data lake tally. Manifest-backed, so present with or without biomni. */

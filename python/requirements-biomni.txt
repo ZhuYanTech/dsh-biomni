@@ -19,6 +19,11 @@
 # Biomni declares only pydantic, langchain, and python-dotenv. Everything below
 # is undeclared: found by reading its source, and required for its tools to
 # import or run. Two separate mechanisms are at work, and both bite.
+#
+# THIS IS THE CORE TIER. Four packages were measured to cost far more than they
+# unlock and moved to requirements-biomni-extras.txt: together they are 485 MB
+# for six functions. Install them when you need those six; see that file for the
+# per-package price and exactly which functions each one buys.
 
 biomni==0.0.8
 
@@ -47,20 +52,16 @@ scipy                  # 43 functions — by far the best return here
 scikit-image           # 18
 opencv-python-headless # 10
 scikit-learn           #  4
-statsmodels
 networkx
 python-louvain         # imported as `community`
-rdkit
 nibabel
 trackpy
 pyliftover
-cobra
 
 # literature.query_pubmed / query_arxiv / query_scholar each need one of these.
 # query_pubmed is the module's most useful entry point and fails without pymed.
 pymed
 arxiv
-scholarly
 
 # --- Deliberately excluded ---------------------------------------------------
 # torch, esm, gget, gseapy, scanpy, pybiomart   -> genetics, genomics modules

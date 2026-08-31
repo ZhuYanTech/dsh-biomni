@@ -1,9 +1,12 @@
 # GENERATED — do not edit by hand.
 #
-# A full pinned resolution of requirements-biomni.txt, so two people installing
-# a week apart get the same interpreter. `requirements-biomni.txt` stays the
-# source of truth for what is WANTED and why; this file records what pip
+# A full pinned resolution of the CORE tier (requirements-biomni.txt), so two
+# people installing a week apart get the same interpreter. That file stays the
+# source of truth for what is wanted and why; this one records what pip
 # actually resolved.
+#
+# Measured: 77 packages, 806 MB, 279 of 312 functions callable.
+# The four packages in requirements-biomni-extras.txt add 494 MB for 7 more.
 #
 # Regenerate:
 #
@@ -17,49 +20,29 @@
 #   python3.11 -m venv .venv
 #   .venv/bin/pip install -r python/requirements-biomni.lock.txt
 #
-# SCOPE, honestly: this is one resolution on Linux / CPython 3.11, not a
-# cross-platform lock with hashes. It pins versions, which is what stops the
-# environment drifting underneath the probe; it does not guarantee identical
-# wheels on another OS. If that matters later, move to uv or pip-tools with
-# --generate-hashes.
-#
-# Measured: 131 packages, 1.3 GB installed.
-alabaster==1.0.0
+# SCOPE, honestly: one resolution on Linux / CPython 3.11, not a cross-platform
+# lock with hashes. It pins versions, which is what stops the environment
+# drifting underneath the probe; it does not guarantee identical wheels on
+# another OS. If that matters later, move to uv or pip-tools --generate-hashes.
 annotated-types==0.8.0
 anyio==4.14.2
-appdirs==1.4.4
-arrow==1.4.0
 arxiv==4.0.1
-attrs==26.1.0
-babel==2.18.0
 beautifulsoup4==4.15.0
-bibtexparser==1.4.4
 biomni==0.0.8
 biopython==1.88
 certifi==2026.7.22
 charset-normalizer==3.5.1
-cobra==0.32.1
 contourpy==1.3.3
 cycler==0.12.1
-depinfo==2.2.0
-Deprecated==1.3.1
 distro==1.9.0
-docutils==0.22.4
-fake-useragent==2.2.0
 fonttools==4.63.0
-formulaic==1.2.2
-free_proxy==1.2.3
-future==1.0.0
 googlesearch-python==1.3.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
 idna==3.19
 ImageIO==2.37.4
-imagesize==2.0.1
 importlib_resources==7.1.0
-interface_meta==2.0.1
-Jinja2==3.1.6
 joblib==1.5.3
 jsonpatch==1.33
 jsonpointer==3.1.1
@@ -75,81 +58,44 @@ langsmith==0.11.2
 lazy-loader==0.5
 looseversion==1.3.0
 lxml==6.1.2
-markdown-it-py==4.2.0
-MarkupSafe==3.0.3
 matplotlib==3.11.1
-mdurl==0.1.2
-mpmath==1.3.0
 narwhals==2.25.0
 networkx==3.6.1
 nibabel==5.4.2
 numpy==2.4.6
 opencv-python-headless==5.0.0.93
-optlang==1.9.1
 orjson==3.12.0
 ormsgpack==1.12.2
-outcome==1.3.0.post0
 packaging==26.3
-pandas==2.3.3
-patsy==1.0.3
+pandas==3.0.5
 pillow==12.3.0
 pydantic==2.13.5
 pydantic_core==2.46.5
-Pygments==2.21.0
 pyliftover==0.4.1
 pymed==0.8.9
 pyparsing==3.3.2
 PyPDF2==3.0.1
-PySocks==1.7.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
-python-libsbml==5.21.1
 python-louvain==0.16
-pytz==2026.3.post1
 PyYAML==6.0.3
-rdkit==2026.3.5
 requests-toolbelt==1.0.0
 requests==2.34.2
-rich==15.0.0
-roman-numerals==4.1.0
-ruamel.yaml==0.19.1
-scholarly==1.7.11
 scikit-image==0.26.0
 scikit-learn==1.9.0
 scipy==1.17.1
-selenium==4.48.0
 six==1.17.0
 sniffio==1.3.1
-snowballstemmer==3.1.1
-sortedcontainers==2.4.0
 soupsieve==2.9.2
-Sphinx==9.0.4
-sphinxcontrib-applehelp==2.0.0
-sphinxcontrib-devhelp==2.0.0
-sphinxcontrib-htmlhelp==2.1.0
-sphinxcontrib-jquery==4.1
-sphinxcontrib-jsmath==1.0.1
-sphinxcontrib-qthelp==2.0.0
-sphinxcontrib-serializinghtml==2.0.0
-sphinx_rtd_theme==3.1.0
-statsmodels==0.15.0
-swiglpk==5.0.13
-sympy==1.14.0
 tenacity==9.1.4
 threadpoolctl==3.6.0
 tifffile==2026.3.3
 tqdm==4.70.0
 trackpy==0.7
-trio-websocket==0.12.2
-trio==0.34.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
-tzdata==2026.3
 urllib3==2.7.0
 uuid_utils==0.17.0
-websocket-client==1.9.1
 websockets==16.1.1
-wrapt==2.4.0
-wsproto==1.3.2
 xxhash==4.0.1
 zstandard==0.25.0

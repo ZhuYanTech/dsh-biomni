@@ -114,12 +114,28 @@ export function renderReport(report: ProbeReport, prefs: BiomniPrefs): string {
   if (missing.length > 0) {
     lines.push('')
     lines.push('Importable, but these functions raise ModuleNotFoundError when called:')
+    const cost = report.optionalCostMb ?? {}
     for (const [pkg, count] of missing.slice(0, MISSING_SHOWN)) {
-      lines.push(`  ${pkg.padEnd(22)} ${count} function${count === 1 ? '' : 's'}`)
+      // A package's price belongs next to its name. Without it, "install rdkit"
+      // (151 MB, one function) reads exactly like "install scipy" (shared, 43).
+      const price = cost[pkg] === undefined ? '' : `  — ${cost[pkg]} MB for ${count === 1 ? 'it' : 'them'}`
+      lines.push(`  ${pkg.padEnd(22)} ${count} function${count === 1 ? '' : 's'}${price}`)
     }
     if (missing.length > MISSING_SHOWN) lines.push(`  ... and ${missing.length - MISSING_SHOWN} more packages`)
-    lines.push('')
-    lines.push(`  pip install ${missing.slice(0, MISSING_SHOWN).map(([pkg]) => pkg).join(' ')}`)
+
+    // Suggest only the cheap ones by default; the priced ones are a deliberate
+    // choice, not something to paste without reading.
+    const cheap = missing.slice(0, MISSING_SHOWN).map(([pkg]) => pkg).filter(pkg => cost[pkg] === undefined)
+    if (cheap.length > 0) {
+      lines.push('')
+      lines.push(`  pip install ${cheap.join(' ')}`)
+    }
+    const priced = missing.map(([pkg]) => pkg).filter(pkg => cost[pkg] !== undefined)
+    if (priced.length > 0) {
+      lines.push('')
+      lines.push(`  Deliberately outside the core tier: ${priced.map(pkg => `${pkg} (${cost[pkg]} MB)`).join(', ')}.`)
+      lines.push('  See python/requirements-biomni-extras.txt for what each one buys.')
+    }
   }
 
   // The data lake and the software library are separate assets from the tool

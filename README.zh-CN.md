@@ -76,9 +76,23 @@ python3.11 -m venv .venv
 .venv/bin/pip install -r requirements-biomni.lock.txt
 ```
 
-实测：**131 个包，1.3 GB。** Biomni 只声明了三个依赖，实际需要的远不止 ——
-`requirements-biomni.txt` 是读它源码整理出来的真实清单，逐条标注了每个包解锁什么；
-旁边的 `.lock.txt` 把所有传递依赖的版本钉死，两个人隔一周装也能得到同一个解释器。
+实测：**77 个包，806 MB，Biomni 的 312 个函数里 279 个可调用。**
+
+Biomni 只声明了三个依赖，实际需要的远不止，所以 `requirements-biomni.txt` 是读它源码整理出来的
+真实清单，逐条标注了每个包解锁什么。旁边的 `.lock.txt` 把所有传递依赖的版本钉死，两个人隔一周装
+也能得到同一个解释器。
+
+有四个包被移出了 core 档，放在 `requirements-biomni-extras.txt`，因为实测它们的代价远超收益：
+
+| | 独占体积 | 买到 |
+|---|---|---|
+| `rdkit` | 151 MB | 1 个函数 |
+| `cobra` | 147 MB | 2 个函数 |
+| `scholarly` | 119 MB（要驱动一个真浏览器） | 1 个函数 |
+| `statsmodels` | 68 MB | 2 个函数 |
+
+加起来 **494 MB 换 7 个函数**。需要那七个就装，别的什么都不变。探针会连价格一起报出来，
+而不是把它们当免费的建议给你。
 
 ### 3. 指向那个解释器
 

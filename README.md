@@ -82,10 +82,26 @@ python3.11 -m venv .venv
 .venv/bin/pip install -r requirements-biomni.lock.txt
 ```
 
-Measured: **131 packages, 1.3 GB.** Biomni declares three dependencies and needs far more —
-`requirements-biomni.txt` is the real list, reverse-engineered from its source and annotated with
-what each package unlocks; the `.lock.txt` beside it pins every transitive version so two people
-installing a week apart get the same interpreter.
+Measured: **77 packages, 806 MB, 279 of Biomni's 312 functions callable.**
+
+Biomni declares three dependencies and needs far more, so `requirements-biomni.txt` is the real
+list, reverse-engineered from its source and annotated with what each package unlocks. The
+`.lock.txt` beside it pins every transitive version, so two people installing a week apart get the
+same interpreter.
+
+Four packages sit outside that core tier, in `requirements-biomni-extras.txt`, because each was
+measured to cost far more than it unlocks:
+
+| | exclusive cost | buys |
+|---|---|---|
+| `rdkit` | 151 MB | 1 function |
+| `cobra` | 147 MB | 2 functions |
+| `scholarly` | 119 MB (drives a real browser) | 1 function |
+| `statsmodels` | 68 MB | 2 functions |
+
+Together that is **494 MB for 7 more functions**. Install them if you need those seven; nothing
+else changes. The probe names them with their price rather than suggesting them as if they were
+free.
 
 ### 3. Point the plugin at that interpreter
 

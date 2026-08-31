@@ -93,6 +93,11 @@ def survey(data_path=None):
 
     report["gate"] = _gates.universal_gate()
     report["missing"] = dict(sorted(missing.items(), key=lambda kv: -kv[1]))
+    # Only for the packages whose price is known and large. A bare list of names
+    # makes a 151 MB single-function dependency look like a 0.1 MB one.
+    report["optionalCostMb"] = {
+        name: cost for name, cost in _gates.OPTIONAL_COST_MB.items() if name in missing
+    }
     return report
 
 

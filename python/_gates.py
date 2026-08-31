@@ -43,6 +43,7 @@ __all__ = [
     "data_lake_entries",
     "library_entries",
     "manifest",
+    "OPTIONAL_COST_MB",
     "spec_exists",
     "stdlib_names",
     "tool_dir",
@@ -53,6 +54,21 @@ __all__ = [
 #: `biomni.utils`, which needs these — so without them all 21 modules fail
 #: identically, and the resulting ImportError names neither of them.
 UNIVERSAL_GATE = ("tqdm", "pandas")
+
+#: Packages deliberately left out of the core requirements tier, with the disk
+#: each one costs exclusively — that package plus the dependencies nothing else
+#: needs. Measured on CPython 3.11 / Linux from a clean install.
+#:
+#: This exists so "install scipy" and "install rdkit" do not read as equally
+#: cheap suggestions. One is shared infrastructure that unlocks 43 functions;
+#: the other is 151 MB for one. A report that names a missing package without
+#: its price is inviting a 485 MB install nobody asked for.
+OPTIONAL_COST_MB = {
+    "rdkit": 151,
+    "cobra": 147,
+    "scholarly": 119,
+    "statsmodels": 68,
+}
 
 
 def spec_exists(name):
