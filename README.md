@@ -45,40 +45,44 @@ It is an ordinary out-of-tree plugin. It does not fork or patch the harness.
 
 ## Install
 
-### 1. Build a Python environment with Biomni
+### 1. Add the plugin
 
-Biomni needs Python 3.11+ and about 1 GB of dependencies. macOS ships 3.9, which will not do.
+```sh
+dsh plugin --profile web add dsh-biomni
+```
+
+That is the whole step. The CLI reads this package's `dsh.bundle.patch` declaration and appends
+`dsh-biomni` to your profile's bundles — no profile file to edit.
+
+<details>
+<summary>Installing from source instead (for development)</summary>
 
 ```sh
 git clone https://github.com/ZhuYanTech/dsh-biomni && cd dsh-biomni
-python3.11 -m venv .venv
-.venv/bin/pip install -r python/requirements-biomni.txt
+bash scripts/install.sh web
 ```
 
-> Biomni declares three dependencies and needs far more. `requirements-biomni.txt` is the real
-> list, found by reading its source — and annotated with what each package unlocks.
+This packs a tarball with `lib/` prebuilt and installs that, so pnpm never needs to run a build
+script for it.
 
-### 2. Add the plugin
+</details>
 
-Not published to npm yet, so install it straight from GitHub:
+### 2. Build a Python environment with Biomni
+
+Biomni's library needs Python 3.11+. macOS ships 3.9, which will not do.
 
 ```sh
-dsh plugin --profile web add "github:ZhuYanTech/dsh-biomni"
+curl -sLO https://raw.githubusercontent.com/ZhuYanTech/dsh-biomni/main/python/requirements-biomni.lock.txt
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements-biomni.lock.txt
 ```
 
-**The first run will fail, and that is expected.** A git dependency is built on the fly by its
-`prepare` script, and pnpm blocks dependency build scripts by default. The error prints the exact
-key you need. Add it to your **profile's own** `pnpm-workspace.yaml`:
+Measured: **131 packages, 1.3 GB.** Biomni declares three dependencies and needs far more —
+`requirements-biomni.txt` is the real list, reverse-engineered from its source and annotated with
+what each package unlocks; the `.lock.txt` beside it pins every transitive version so two people
+installing a week apart get the same interpreter.
 
-```yaml
-# $DSH_HOME/profiles/web/pnpm-workspace.yaml
-allowBuilds:
-  "dsh-biomni@https://codeload.github.com/ZhuYanTech/dsh-biomni/tar.gz/<commit-sha>": true
-```
-
-Then run the command again. The key carries a commit SHA, so it changes whenever the repo does.
-
-### 3. Point it at your interpreter
+### 3. Point the plugin at that interpreter
 
 Start `dsh --profile web`, open **Settings → Biomni**, and set the Python interpreter to
 `/abs/path/to/.venv/bin/python`. It takes effect immediately.
@@ -87,7 +91,7 @@ Or write it into `$DSH_HOME/settings.yaml`:
 
 ```yaml
 biomni:
-  python: /abs/path/to/.venv/bin/python   # the venv from step 1
+  python: /abs/path/to/.venv/bin/python   # the venv from step 2
   dataPath: /abs/path/to/data             # optional: holds biomni_data/
   timeoutMs: 600000
   guardShellPython: true

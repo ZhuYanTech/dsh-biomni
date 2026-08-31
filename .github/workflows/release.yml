@@ -1,0 +1,88 @@
+name: Release
+
+# Publishing is driven by the tag, so the released artifact is always one a
+# commit points at. A workflow-dispatch path exists for the case where a tag was
+# pushed before this workflow landed, or a publish failed halfway and has to be
+# retried without cutting a new version.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish (e.g. v0.0.1)'
+        required: true
+        type: string
+
+# npm provenance needs id-token; creating the GitHub Release needs contents.
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # Node 22 for the same reason CI pins it: the dsh CLI bundles pnpm 11.x,
+      # which requires >=22.13.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - run: pnpm install --frozen-lockfile
+
+      # A tag that disagrees with package.json produces a release nobody can
+      # find: the git history says one version and the registry says another.
+      # Checked before anything is built, so the failure is cheap and obvious.
+      - name: tag matches package version
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          PKG="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag $TAG does not match package.json $PKG"
+            exit 1
+          fi
+          echo "publishing $PKG"
+
+      # The same gates CI runs. A release is the worst place to discover a
+      # broken build, and `prepublishOnly` would run the build again anyway.
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+      - run: python3 -m compileall -q python/
+
+      # Refuse to republish a version that already exists rather than failing
+      # deep inside npm with a 403 that reads like an auth problem.
+      - name: version is not already published
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
+            echo "::error::$PKG@$VER is already on npm; bump the version"
+            exit 1
+          fi
+
+      # --provenance ties the published tarball to this workflow run and this
+      # commit, which is what makes the npm page's provenance badge meaningful.
+      - name: publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: create the GitHub release
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag || \
+            echo "release already exists, leaving it alone"
+        env:
+          GH_TOKEN: ${{ github.token }}

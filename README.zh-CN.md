@@ -42,39 +42,42 @@
 
 ## 安装
 
-### 1. 建一个装了 Biomni 的 Python 环境
+### 1. 装插件
 
-Biomni 需要 Python 3.11+ 和约 1 GB 依赖。macOS 自带的是 3.9，装不了。
+```sh
+dsh plugin --profile web add dsh-biomni
+```
+
+就这一步。CLI 会读本包的 `dsh.bundle.patch` 声明，把 `dsh-biomni` 追加进你 profile 的 bundles，
+不需要手改 profile 文件。
+
+<details>
+<summary>从源码装（开发用）</summary>
 
 ```sh
 git clone https://github.com/ZhuYanTech/dsh-biomni && cd dsh-biomni
-python3.11 -m venv .venv
-.venv/bin/pip install -r python/requirements-biomni.txt
+bash scripts/install.sh web
 ```
 
-> Biomni 只声明了三个依赖，实际需要的远不止。`requirements-biomni.txt` 是读它源码整理出来的真实清单，
-> 并且逐条标注了每个包能解锁什么。
+这条路打出的 tarball 里 `lib/` 是预构建好的，pnpm 不需要为它跑任何构建脚本。
 
-### 2. 装插件
+</details>
 
-还没发布到 npm，所以直接从 GitHub 装：
+### 2. 建一个装了 Biomni 的 Python 环境
+
+Biomni 的库需要 Python 3.11+。macOS 自带的是 3.9，装不了。
 
 ```sh
-dsh plugin --profile web add "github:ZhuYanTech/dsh-biomni"
+curl -sLO https://raw.githubusercontent.com/ZhuYanTech/dsh-biomni/main/python/requirements-biomni.lock.txt
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements-biomni.lock.txt
 ```
 
-**第一次一定会失败，这是预期内的。** git 依赖要靠 `prepare` 脚本现场构建，而 pnpm 默认拦截依赖的构建
-脚本。报错会打印出你需要的确切 key，把它加进 **profile 自己的** `pnpm-workspace.yaml`：
+实测：**131 个包，1.3 GB。** Biomni 只声明了三个依赖，实际需要的远不止 ——
+`requirements-biomni.txt` 是读它源码整理出来的真实清单，逐条标注了每个包解锁什么；
+旁边的 `.lock.txt` 把所有传递依赖的版本钉死，两个人隔一周装也能得到同一个解释器。
 
-```yaml
-# $DSH_HOME/profiles/web/pnpm-workspace.yaml
-allowBuilds:
-  "dsh-biomni@https://codeload.github.com/ZhuYanTech/dsh-biomni/tar.gz/<commit-sha>": true
-```
-
-然后重跑那条命令。注意这个 key 带 commit SHA，仓库每更新一次就要换一次。
-
-### 3. 指向你的解释器
+### 3. 指向那个解释器
 
 启动 `dsh --profile web`，打开 **设置 → Biomni**，把 Python 解释器填成
 `/abs/path/to/.venv/bin/python`。改动立即生效。
@@ -83,7 +86,7 @@ allowBuilds:
 
 ```yaml
 biomni:
-  python: /abs/path/to/.venv/bin/python   # 第 1 步建的 venv
+  python: /abs/path/to/.venv/bin/python   # 第 2 步建的 venv
   dataPath: /abs/path/to/data             # 可选：存放 biomni_data/ 的那一层
   timeoutMs: 600000
   guardShellPython: true

@@ -70,3 +70,45 @@ describe('manifest consistency', () => {
     }
   })
 })
+
+/**
+ * Publish metadata. These are cheap to get wrong and expensive to notice: a
+ * stale version or a wrong repository URL is only visible once the package is
+ * on a registry, where it cannot be edited in place.
+ */
+describe('publish metadata', () => {
+  it('keeps the manifest version in step with the package version', () => {
+    // Two files carry the version, so they drift. The manifest one is what a
+    // DSH profile records when it installs the plugin, and a mismatch means the
+    // recorded version is not the one that shipped.
+    expect(manifest.version).toBe(pkg.version)
+  })
+
+  it('points at the repository it is actually published from', () => {
+    // npm renders this as the Repository link and uses it for provenance, so a
+    // wrong owner sends every visitor to a 404.
+    expect(pkg.repository.url).toContain('ZhuYanTech/dsh-biomni')
+    expect(pkg.homepage).toContain('ZhuYanTech/dsh-biomni')
+  })
+
+  it('ships every runtime file the plugin loads', () => {
+    // `files` is an allowlist: anything absent from it is simply not in the
+    // tarball, and the failure only shows up on a consumer's machine. The
+    // Python scripts and the shipped skills are loaded at runtime by path, so
+    // they are the easiest ones to leave behind.
+    const files = pkg.files
+    for (const required of [
+      'lib/index.js',
+      'lib/client.js',
+      'lib/client-registry.js',
+      'python/worker.py',
+      'python/probe.py',
+      'python/skills.py',
+      'python/_gates.py',
+      'skills',
+      'preset',
+    ]) {
+      expect(files, `${required} is missing from package.json "files"`).toContain(required)
+    }
+  })
+})
