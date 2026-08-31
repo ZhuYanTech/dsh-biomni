@@ -406,3 +406,79 @@
     transition: none;
   }
 }
+
+/* ── The data lake browser ────────────────────────────────────────────────── */
+
+/*
+ * A fetch button sits inside a 12px list row, so it cannot use the section
+ * button's proportions without the row growing around it.
+ */
+.rowAction {
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-fill-secondary, transparent);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.rowAction:hover:not(:disabled) {
+  background: var(--dsw-alias-fill-tertiary, transparent);
+}
+
+.rowAction:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/*
+ * The licence acknowledgement. Deliberately not styled as a settings row: it
+ * is a precondition for an action on this page, not a stored preference, and
+ * looking like one would suggest it persists.
+ */
+.accept {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-fill-secondary, transparent);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.accept input {
+  margin-top: 2px;
+  flex: none;
+}
+
+.acceptText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The filter sits above a long list and should not read as a settings field. */
+.filter {
+  width: 100%;
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-fill-primary, transparent);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+/* A long catalog scrolls inside the group rather than growing the page. */
+.datasetList {
+  max-height: 340px;
+  overflow-y: auto;
+}

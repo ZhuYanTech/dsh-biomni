@@ -184,3 +184,56 @@ describe('BiomniError', () => {
     expect(new BiomniError('bad-request', 'x').status).toBe(400)
   })
 })
+
+describe('the dataset methods', () => {
+  /** A table whose fetch records what it was asked for. */
+  function withFetch() {
+    const calls: { names: string[]; accept: boolean }[] = []
+    const api = buildApi({
+      settings: () => undefined,
+      python: () => 'python3',
+      probe: async () => { throw new Error('unused') },
+      datasets: async () => { throw new Error('helper exited 1: ENOENT') },
+      fetch: async (names, acceptNonCommercial) => {
+        calls.push({ names, accept: acceptNonCommercial })
+        return { path: '/data', results: names.map(name => ({ name, status: 'fetched' as const })) }
+      },
+    })
+    return { api, calls }
+  }
+
+  it('reports a catalog that cannot be read as data, not as a failure', async () => {
+    // Same reasoning as env.probe: a wrong interpreter path is the common case
+    // and belongs in the panel, not in a 500.
+    const { api } = withFetch()
+    await expect(api['datasets.list']!({})).resolves.toMatchObject({
+      catalog: null,
+      error: expect.stringContaining('ENOENT'),
+    })
+  })
+
+  it.each([
+    ['no payload', null],
+    ['no names', {}],
+    ['an empty list', { names: [] }],
+    ['a bare string', { names: 'DepMap_Model.csv' }],
+    ['a non-string entry', { names: [42] }],
+    ['an empty name', { names: [''] }],
+  ])('refuses %s', async (_label, payload) => {
+    // A write, so it is strict where the reads are forgiving.
+    const { api } = withFetch()
+    await expect(api['datasets.fetch']!(payload)).rejects.toMatchObject({ code: 'bad-request' })
+  })
+
+  it('passes the licence acknowledgement only when it is exactly true', async () => {
+    // Anything truthy-but-not-true would make a deliberate legal choice
+    // implicit. It is the one action here that deleting a file does not undo.
+    const { api, calls } = withFetch()
+    await api['datasets.fetch']!({ names: ['a'] })
+    await api['datasets.fetch']!({ names: ['b'], acceptNonCommercial: false })
+    await api['datasets.fetch']!({ names: ['c'], acceptNonCommercial: 'yes' })
+    await api['datasets.fetch']!({ names: ['d'], acceptNonCommercial: 1 })
+    await api['datasets.fetch']!({ names: ['e'], acceptNonCommercial: true })
+    expect(calls.map(call => call.accept)).toEqual([false, false, false, false, true])
+  })
+})

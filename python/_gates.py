@@ -300,8 +300,25 @@ def manifest():
         libraries = full.get("library_content_dict")
         if datasets or libraries:
             allowed = cm.get("data_lake_dict")
+            live = _normalize_datasets(datasets)
+            # Biomni's own env_desc records no sizes — it never needed them,
+            # because its downloader fetches the whole lake. Fetching one
+            # dataset at a time turns the size into the deciding number, so the
+            # published figures captured alongside the shipped manifest are
+            # merged in for the names both know about.
+            #
+            # This is a merge, not an override: the live source stays
+            # authoritative for WHICH datasets exist and what they are. A size
+            # is a property of the published file, and a name the captured copy
+            # has never heard of simply keeps `bytes: None`.
+            for name, record in (_vendored() or {}).get("datasets", {}).items():
+                entry = live.get(name)
+                if entry is not None and entry["bytes"] is None and isinstance(record, dict):
+                    size = record.get("bytes")
+                    if isinstance(size, int):
+                        entry["bytes"] = size
             return (
-                _normalize_datasets(datasets),
+                live,
                 libraries or {},
                 None if allowed is None else set(allowed),
                 "live",

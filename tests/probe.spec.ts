@@ -183,3 +183,19 @@ describe('renderDatasets', () => {
     expect(renderDatasets({ ...CATALOG, source: 'live' })).not.toContain('shipped manifest')
   })
 })
+
+describe('dataset sizes across manifest sources', () => {
+  it('is what the shipped manifest exists to guarantee', () => {
+    // Biomni's own env_desc records no sizes: its downloader takes the whole
+    // lake, so it never needed them. Fetching one dataset at a time makes the
+    // size the deciding number, so _gates.manifest() merges the captured
+    // figures into the live catalog. Without that, installing Biomni would
+    // make the fetch UI worse than not installing it — which is the kind of
+    // inversion nobody would think to check for.
+    const manifest = JSON.parse(
+      readFileSync(fileURLToPath(new URL('../data/biomni-manifest.json', import.meta.url)), 'utf8'),
+    ) as { datasets: Record<string, { bytes: number | null }> }
+    const sized = Object.values(manifest.datasets).filter(entry => entry.bytes !== null)
+    expect(sized.length).toBe(Object.keys(manifest.datasets).length)
+  })
+})

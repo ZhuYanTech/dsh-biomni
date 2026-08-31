@@ -6,6 +6,11 @@
  * Needs only a bare `python3` — no Biomni. The Biomni-specific assertions live
  * in biomni.spec.ts, which skips when the interpreter has no Biomni.
  */
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { apply, Config, inject, name } from '../src/index.ts'
 import type { BiomniConfig } from '../src/config.ts'
@@ -186,5 +191,64 @@ describe('the output cap', () => {
     const result = await run('print("hello")')
     expect(result).toBe('hello')
     expect(result).not.toMatch(/truncated/)
+  })
+})
+
+/**
+ * The dataset fetcher's refusals, run against the real script.
+ *
+ * These paths never touch the network, which is the point: both are decided
+ * from the manifest before anything is requested. They live here rather than in
+ * the Biomni lane because they hold with or without Biomni installed — the
+ * manifest ships with the plugin.
+ */
+describe('the dataset fetcher', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-biomni-fetch-'))
+  const script = fileURLToPath(new URL('../python/fetch.py', import.meta.url))
+
+  /** Run fetch.py and parse its single JSON object. */
+  function fetchPy(args: string[]): { results?: { name: string; status: string; detail?: string }[] } {
+    try {
+      return JSON.parse(execFileSync(PYTHON, [script, '--root', root, ...args], { encoding: 'utf8' }))
+    } catch (error) {
+      // A refusal exits non-zero by design; the payload is still on stdout.
+      return JSON.parse((error as { stdout: string }).stdout)
+    }
+  }
+
+  it('lists the catalog with a size on every entry', () => {
+    const listed = JSON.parse(
+      execFileSync(PYTHON, [script, '--list', '--root', root], { encoding: 'utf8', maxBuffer: 1e8 }),
+    ) as { total: number; entries: { name: string; bytes: number | null; size: string }[] }
+    expect(listed.total).toBeGreaterThan(50)
+    for (const entry of listed.entries) {
+      expect(entry.bytes, `${entry.name} has no size`).toBeGreaterThan(0)
+      expect(entry.size).not.toBe('?')
+    }
+  })
+
+  it('refuses a name that is not in the manifest', () => {
+    // The manifest is the allowlist. A name outside it is never turned into a
+    // URL, so this cannot be aimed at another host or another path.
+    const report = fetchPy(['../../etc/passwd'])
+    expect(report.results?.[0]).toMatchObject({ status: 'unknown' })
+  })
+
+  it('refuses a non-commercial dataset without the acknowledgement', () => {
+    // The licence is tracked apart from availability everywhere in this
+    // plugin; this is the point where it binds.
+    const report = fetchPy(['BindingDB_All_202409.tsv'])
+    expect(report.results?.[0]).toMatchObject({ status: 'restricted' })
+    expect(report.results?.[0]?.detail).toContain('accept-noncommercial')
+  })
+
+  it('writes nothing when it refuses', () => {
+    // A refusal that left a zero-byte file behind would read as present to the
+    // probe, which is worse than the refusal it was meant to be.
+    fetchPy(['BindingDB_All_202409.tsv'])
+    fetchPy(['../../etc/passwd'])
+    const lake = join(root, 'biomni_data', 'data_lake')
+    const listing = existsSync(lake) ? readdirSync(lake) : []
+    expect(listing).toEqual([])
   })
 })

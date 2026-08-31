@@ -39,7 +39,8 @@ what it needs.
 | 🧬 **21 research-function skills** | Biomni's biomedical library, one skill per module, carrying real signatures — parameter types, defaults, and what each one means. Loaded on demand, so 218 functions cost ~1.6k tokens of context instead of ~26k. *(Needs Biomni installed.)* |
 | 🗄️ **A data lake skill** | The biomedical datasets actually downloaded on this machine, with exact paths, sizes, and licence flags. Prefer local data over a web round trip. |
 | 🔧 **A software skill** | The bioinformatics packages and CLI tools actually installed here — so the agent reaches for `samtools` instead of reimplementing it. |
-| 🔍 **An honest environment report** | The `/biomni` command and a Settings page telling you exactly what works, what doesn't, and which package would fix it. |
+| 🔍 **An honest environment report** | The `/biomni` command and a Settings page telling you exactly what works, what doesn't, and which package would fix it — with the price, so a 151 MB single-function dependency never reads like a free one. |
+| 🧪 **A data lake browser** | Settings → Biomni lists all 76 datasets with sizes, marks what is on disk, and fetches one at a time. Non-commercial datasets need an explicit acknowledgement. |
 
 It is an ordinary out-of-tree plugin. It does not fork or patch the harness.
 

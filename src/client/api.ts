@@ -7,7 +7,10 @@
  * wire code, so the caller can distinguish a settings conflict (re-read and
  * retry) from a transport failure (keep the defaults).
  */
+import type { DatasetCatalog, DatasetEntry, FetchReport } from '../datasets.ts'
 import type { ProbeReport } from '../prefs-shared.ts'
+
+export type { DatasetCatalog, DatasetEntry, FetchReport }
 
 /** One wire failure. */
 export class BiomniApiError extends Error {
@@ -70,4 +73,18 @@ export const api = {
     }),
   /** Survey the configured interpreter (slow: it starts a Python process). */
   envProbe: (signal?: AbortSignal) => call<ProbeResult>('env.probe', {}, signal),
+
+  /** The data lake catalog: what exists, what it costs, what is already here. */
+  datasetsList: (signal?: AbortSignal) =>
+    call<{ catalog: DatasetCatalog | null; error?: string }>('datasets.list', {}, signal),
+
+  /**
+   * Fetch datasets by manifest name.
+   *
+   * `acceptNonCommercial` has to be passed explicitly for a restricted
+   * dataset; the host refuses otherwise, independently of whatever the UI
+   * decided to enable.
+   */
+  datasetsFetch: (names: string[], acceptNonCommercial = false) =>
+    call<FetchReport>('datasets.fetch', { names, acceptNonCommercial }),
 }
