@@ -18,7 +18,7 @@
  * it over this plugin's own fenced route instead. The write keeps the seam's
  * revision guard, so a stale editor is still refused.
  */
-import type { ArtifactListing } from './artifacts.ts'
+import type { ArtifactListing, ArtifactPreview } from './artifacts.ts'
 import type { DatasetCatalog, FetchReport } from './datasets.ts'
 import type { ProbeReport } from './prefs-shared.ts'
 import { BiomniError } from './wire.ts'
@@ -66,6 +66,8 @@ export interface ApiDeps {
   fetch: (names: string[], acceptNonCommercial: boolean) => Promise<FetchReport>
   /** What the interpreter has written into the session's output directory. */
   artifacts: () => Promise<ArtifactListing>
+  /** As much of one artifact as is safe and useful to show; null when absent. */
+  preview: (name: string) => Promise<ArtifactPreview | null>
 }
 
 /** One API method: an unknown JSON payload in, a JSON-serializable value out. */
@@ -162,5 +164,22 @@ export function buildApi(deps: ApiDeps): Record<string, ApiMethod> {
      * and is allowed to throw.
      */
     'artifacts.list': (): Promise<ArtifactListing> => deps.artifacts(),
+
+    /**
+     * A bounded look at one artifact.
+     *
+     * Same containment gate as the download, and the same 404 for every
+     * failure: a preview that distinguished "absent" from "outside the root"
+     * would be a filesystem probe with a friendlier name.
+     */
+    'artifacts.preview': async (payload: unknown): Promise<ArtifactPreview> => {
+      const name = (payload as { name?: unknown } | null)?.name
+      if (typeof name !== 'string' || name === '') {
+        throw new BiomniError('bad-request', 'missing or invalid "name"')
+      }
+      const preview = await deps.preview(name)
+      if (preview === null) throw new BiomniError('not-found', 'no such artifact', 404)
+      return preview
+    },
   }
 }

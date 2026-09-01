@@ -141,6 +141,7 @@ describe('the method table', () => {
       datasets: async () => { throw new Error('unused') },
       fetch: async () => { throw new Error('unused') },
       artifacts: async () => { throw new Error('unused') },
+      preview: async () => null,
     })
     expect(api['settings.get']!({})).toEqual({ value: undefined, revision: undefined })
     await expect(api['settings.update']!({ patch: {} }))
@@ -157,6 +158,7 @@ describe('the method table', () => {
       datasets: async () => { throw new Error('unused') },
       fetch: async () => { throw new Error('unused') },
       artifacts: async () => { throw new Error('unused') },
+      preview: async () => null,
     })
     await expect(api['env.probe']!({})).resolves.toEqual({
       python: '/no/such/python',
@@ -176,6 +178,7 @@ describe('the method table', () => {
       datasets: async () => { throw new Error('unused') },
       fetch: async () => { throw new Error('unused') },
       artifacts: async () => { throw new Error('unused') },
+      preview: async () => null,
     })
     await expect(api['settings.update']!({ patch: { timeoutMs: -1 } }))
       .rejects.toMatchObject({ code: 'settings-rejected', status: 400 })
@@ -202,6 +205,7 @@ describe('the dataset methods', () => {
         return { path: '/data', results: names.map(name => ({ name, status: 'fetched' as const })) }
       },
       artifacts: async () => ({ path: '/ws/biomni-out', exists: false, totalBytes: 0, entries: [] }),
+      preview: async () => null,
     })
     return { api, calls }
   }
@@ -239,5 +243,51 @@ describe('the dataset methods', () => {
     await api['datasets.fetch']!({ names: ['d'], acceptNonCommercial: 1 })
     await api['datasets.fetch']!({ names: ['e'], acceptNonCommercial: true })
     expect(calls.map(call => call.accept)).toEqual([false, false, false, false, true])
+  })
+})
+
+describe('artifacts.preview', () => {
+  /** A table whose preview records the name it was asked for. */
+  function withPreview(answer: 'found' | 'missing') {
+    const asked: string[] = []
+    const api = buildApi({
+      settings: () => undefined,
+      python: () => 'python3',
+      probe: async () => { throw new Error('unused') },
+      datasets: async () => { throw new Error('unused') },
+      fetch: async () => { throw new Error('unused') },
+      artifacts: async () => ({ path: '/ws/biomni-out', exists: true, totalBytes: 0, entries: [] }),
+      preview: async (name) => {
+        asked.push(name)
+        return answer === 'missing' ? null : { name, kind: 'text' as const, bytes: 4, text: 'ok' }
+      },
+    })
+    return { api, asked }
+  }
+
+  it('passes the name through and returns the preview', async () => {
+    const { api, asked } = withPreview('found')
+    await expect(api['artifacts.preview']!({ name: 'hits.csv' }))
+      .resolves.toMatchObject({ name: 'hits.csv', kind: 'text' })
+    expect(asked).toEqual(['hits.csv'])
+  })
+
+  it.each([
+    ['no payload', null],
+    ['no name', {}],
+    ['a non-string name', { name: 42 }],
+    ['an empty name', { name: '' }],
+  ])('refuses %s before touching the filesystem', async (_label, payload) => {
+    const { api, asked } = withPreview('found')
+    await expect(api['artifacts.preview']!(payload)).rejects.toMatchObject({ code: 'bad-request' })
+    expect(asked).toEqual([])
+  })
+
+  it('404s on anything the host refuses to resolve', async () => {
+    // Absent, a directory, or outside the root all answer the same. A preview
+    // that distinguished them would be a filesystem probe with a nicer name.
+    const { api } = withPreview('missing')
+    await expect(api['artifacts.preview']!({ name: '../../etc/passwd' }))
+      .rejects.toMatchObject({ code: 'not-found', status: 404 })
   })
 })

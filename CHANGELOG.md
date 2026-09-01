@@ -4,6 +4,36 @@ Measured figures throughout. Where a number appears here it was read off a real
 run, not estimated — several of these releases exist because an estimate turned
 out to be wrong.
 
+## 0.2.1
+
+**You can see the results, not just download them.**
+
+The question people arrive at this panel with is "did that run produce the
+right thing", and until now the only way to answer it was to save a file and
+open another application. Each row in Settings → Biomni now expands: a figure
+inline, a CSV or TSV as a real table, anything textual as its head.
+
+- Bounded on the server, not in the browser: 2 MB for an inlined image, 64 KB
+  of text, 50 rows by 30 columns. Anything cut is labelled as cut — a table
+  that silently shows 50 of 4,000 rows is how someone concludes a gene is
+  absent.
+- Delimited files are split per RFC 4180 rather than on the delimiter. A quoted
+  comma is ordinary in biological data — gene descriptions are full of them —
+  and a preview that shifts every column after one invites a conclusion from a
+  misread table.
+- `svg` and `html` are shown as source, never rendered. Both can carry script
+  and an agent writes them; the same reason no artifact is ever served as
+  `text/html`.
+- Which extensions preview lives in one table, `src/artifacts-shared.ts`, read
+  by both halves. Two copies would drift, and drift here is silent: a button
+  whose only answer is "no preview", or a previewable file with no way to ask.
+
+**Fixed:** a symlink the interpreter planted was refused by the download route
+but still **reported to the model as a file it wrote**, with the target's size.
+Harmless in itself, but it is precisely the claim this plugin exists to
+prevent — naming a result the operator is then refused. The worker now skips
+links for the same reason the route does, so both sides agree.
+
 ## 0.2.0
 
 **Results have somewhere to go.**

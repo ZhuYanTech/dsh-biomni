@@ -32,6 +32,7 @@ import {
   contentTypeOf,
   listArtifacts,
   MAX_DOWNLOAD_BYTES,
+  previewArtifact,
   readArtifact,
   renderArtifacts,
   resolveArtifact,
@@ -270,6 +271,10 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     datasets: () => listDatasets(datasetRunner()),
     fetch: (names, acceptNonCommercial) => fetchDatasets(datasetRunner(), names, acceptNonCommercial),
     artifacts: () => listArtifacts(outputRoot()),
+    preview: async (name) => {
+      const path = await resolveArtifact(outputRoot(), name)
+      return path === undefined ? null : previewArtifact(path, name)
+    },
   })
 
   // ── The skill catalog ────────────────────────────────────────────────────

@@ -482,3 +482,88 @@
   max-height: 340px;
   overflow-y: auto;
 }
+
+/* ── Artifact previews ────────────────────────────────────────────────────── */
+
+/*
+ * A row that can expand. The hairline moves out to the wrapper so an open
+ * preview sits inside its own row's separators rather than below them.
+ */
+.previewRow {
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.previewRow:last-child {
+  border-bottom: none;
+}
+
+.previewRow .listRow {
+  border-bottom: none;
+}
+
+.preview {
+  padding: 4px 2px 10px;
+}
+
+/*
+ * Bounded in the viewport as well as in bytes. The host caps a preview at
+ * 2 MB / 64 KB / 50 rows, but a 50-row table or a tall figure would still
+ * push the rest of the panel off screen.
+ */
+.previewImage {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  /* Rendered on a light ground: matplotlib writes transparent PNGs, which on a
+     dark theme are black-on-black axes. */
+  background: #fff;
+}
+
+.previewScroll {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+
+.previewTable {
+  border-collapse: collapse;
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.previewTable th,
+.previewTable td {
+  padding: 3px 8px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.previewTable th {
+  position: sticky;
+  top: 0;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-1));
+  font-weight: 600;
+}
+
+.previewText {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}

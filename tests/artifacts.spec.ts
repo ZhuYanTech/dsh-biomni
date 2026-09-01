@@ -13,11 +13,18 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   contentTypeOf,
   listArtifacts,
+  previewArtifact,
   readArtifact,
   renderArtifacts,
   resolveArtifact,
+  splitDelimited,
   MAX_DOWNLOAD_BYTES,
+  MAX_IMAGE_PREVIEW_BYTES,
+  MAX_TABLE_COLUMNS,
+  MAX_TABLE_ROWS,
+  MAX_TEXT_PREVIEW_BYTES,
 } from '../src/artifacts.ts'
+import { previewKindFor } from '../src/artifacts-shared.ts'
 
 const workspace = mkdtempSync(join(tmpdir(), 'dsh-biomni-artifacts-'))
 const root = join(workspace, 'biomni-out')
@@ -147,5 +154,131 @@ describe('renderArtifacts', () => {
     expect(text).toContain('hits.csv')
     expect(text).toContain('figures/volcano.png')
     expect(text).toMatch(/2\.0 KB/)
+  })
+})
+
+describe('splitDelimited', () => {
+  it('splits a plain line', () => {
+    expect(splitDelimited('gene,lfc,padj', ',')).toEqual(['gene', 'lfc', 'padj'])
+    expect(splitDelimited('a\tb', '\t')).toEqual(['a', 'b'])
+  })
+
+  it('keeps a delimiter inside a quoted field', () => {
+    // The reason this function exists rather than a .split(). Gene descriptions
+    // are full of commas, and a preview that shifts every column after one is
+    // worse than no preview: it invites a conclusion from a misread table.
+    expect(splitDelimited('TP53,"tumor protein p53, isoform a",2.1', ','))
+      .toEqual(['TP53', 'tumor protein p53, isoform a', '2.1'])
+  })
+
+  it('reads a doubled quote as one literal quote', () => {
+    expect(splitDelimited('a,"say ""hi""",b', ',')).toEqual(['a', 'say "hi"', 'b'])
+  })
+
+  it('keeps empty fields, including a trailing one', () => {
+    expect(splitDelimited('a,,c,', ',')).toEqual(['a', '', 'c', ''])
+  })
+})
+
+describe('previewKindFor', () => {
+  it.each([
+    ['volcano.png', 'image'],
+    ['hits.csv', 'table'],
+    ['counts.tsv', 'table'],
+    ['notes.md', 'text'],
+    ['run.log', 'text'],
+    ['model.pkl', 'none'],
+    ['noextension', 'none'],
+  ])('classifies %s as %s', (name, kind) => {
+    expect(previewKindFor(name)).toBe(kind)
+  })
+
+  it('does not render svg or html as an image', () => {
+    // Both are documents that can carry script, and an agent writes these. An
+    // inline render would hand it the harness's own origin; source is safe.
+    expect(previewKindFor('figure.svg')).toBe('text')
+    expect(previewKindFor('report.html')).toBe('text')
+  })
+})
+
+describe('previewArtifact', () => {
+  const previewOf = async (name: string) => {
+    const path = (await resolveArtifact(root, name))!
+    expect(path).toBeDefined()
+    return previewArtifact(path, name)
+  }
+
+  it('parses a delimited file into a header and rows', async () => {
+    const preview = await previewOf('hits.csv')
+    expect(preview.kind).toBe('table')
+    expect(preview.rows).toEqual([['gene', 'lfc'], ['TP53', '2.1']])
+    expect(preview.truncated).toBeUndefined()
+  })
+
+  it('inlines a small raster as a data URL with its real type', async () => {
+    const preview = await previewOf('figures/volcano.png')
+    expect(preview.kind).toBe('image')
+    expect(preview.dataUrl?.startsWith('data:image/png;base64,')).toBe(true)
+  })
+
+  it('shows a text file as its head', async () => {
+    writeFileSync(join(root, 'notes.md'), '# results\nnothing surprising\n')
+    const preview = await previewOf('notes.md')
+    expect(preview.kind).toBe('text')
+    expect(preview.text).toContain('nothing surprising')
+  })
+
+  it('caps a table at MAX_TABLE_ROWS and says it did', async () => {
+    const rows = ['gene,lfc', ...Array.from({ length: 200 }, (_, i) => `G${i},1.0`)]
+    writeFileSync(join(root, 'many.csv'), `${rows.join('\n')}\n`)
+    const preview = await previewOf('many.csv')
+    expect(preview.rows).toHaveLength(MAX_TABLE_ROWS)
+    // Silent truncation is the failure mode worth avoiding: 50 rows that look
+    // like the whole file is how someone concludes a gene is absent.
+    expect(preview.truncated).toBe(true)
+  })
+
+  it('caps the width too', async () => {
+    const header = Array.from({ length: 100 }, (_, i) => `c${i}`).join(',')
+    writeFileSync(join(root, 'wide.csv'), `${header}\n`)
+    const preview = await previewOf('wide.csv')
+    expect(preview.rows![0]).toHaveLength(MAX_TABLE_COLUMNS)
+  })
+
+  it('drops the partial last line when the read was cut short', async () => {
+    // A row half-read from a 64 KB boundary is a row the file does not contain.
+    const row = `${'x'.repeat(200)},1`
+    const count = Math.ceil(MAX_TEXT_PREVIEW_BYTES / (row.length + 1)) + 10
+    writeFileSync(join(root, 'long.csv'), `a,b\n${Array.from({ length: count }, () => row).join('\n')}\n`)
+    const preview = await previewOf('long.csv')
+    expect(preview.truncated).toBe(true)
+    for (const parsed of preview.rows!) expect(parsed).toHaveLength(2)
+  })
+
+  it('refuses an image past the inline limit rather than sending it', async () => {
+    writeFileSync(join(root, 'huge.png'), Buffer.alloc(MAX_IMAGE_PREVIEW_BYTES + 1))
+    const preview = await previewOf('huge.png')
+    expect(preview.kind).toBe('none')
+    expect(preview.dataUrl).toBeUndefined()
+    expect(preview.reason).toContain('limit')
+  })
+
+  it('has no preview for an unknown type, and says so', async () => {
+    writeFileSync(join(root, 'model.pkl'), Buffer.alloc(64))
+    const preview = await previewOf('model.pkl')
+    expect(preview.kind).toBe('none')
+    expect(preview.reason).toBeTruthy()
+  })
+
+  it('reports an empty file as empty rather than as a blank table', async () => {
+    writeFileSync(join(root, 'empty.csv'), '')
+    const preview = await previewOf('empty.csv')
+    expect(preview.kind).toBe('none')
+    expect(preview.reason).toContain('empty')
+  })
+
+  it('always reports the real size, whatever it shows', async () => {
+    const preview = await previewOf('hits.csv')
+    expect(preview.bytes).toBe('gene,lfc\nTP53,2.1\n'.length)
   })
 })

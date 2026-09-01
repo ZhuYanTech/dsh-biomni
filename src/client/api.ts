@@ -7,11 +7,11 @@
  * wire code, so the caller can distinguish a settings conflict (re-read and
  * retry) from a transport failure (keep the defaults).
  */
-import type { Artifact, ArtifactListing } from '../artifacts.ts'
+import type { Artifact, ArtifactListing, ArtifactPreview } from '../artifacts.ts'
 import type { DatasetCatalog, DatasetEntry, FetchReport } from '../datasets.ts'
 import type { ProbeReport } from '../prefs-shared.ts'
 
-export type { Artifact, ArtifactListing, DatasetCatalog, DatasetEntry, FetchReport }
+export type { Artifact, ArtifactListing, ArtifactPreview, DatasetCatalog, DatasetEntry, FetchReport }
 
 /** One wire failure. */
 export class BiomniApiError extends Error {
@@ -101,4 +101,8 @@ export const api = {
    * being mistaken for route segments.
    */
   artifactUrl: (name: string) => `/biomni/api/artifacts.get?name=${encodeURIComponent(name)}`,
+
+  /** As much of one artifact as is safe and useful to show. */
+  artifactPreview: (name: string, signal?: AbortSignal) =>
+    call<ArtifactPreview>('artifacts.preview', { name }, signal),
 }

@@ -19,6 +19,7 @@
 import type { Stats } from 'node:fs'
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
+import { DELIMITED, RASTER, TEXTUAL, extensionOf, type PreviewKind } from './artifacts-shared.ts'
 
 /** One file the interpreter produced. */
 export interface Artifact {
@@ -222,4 +223,128 @@ export function renderArtifacts(listing: ArtifactListing): string {
     lines.push('', `Listing stopped at ${MAX_ENTRIES} files.`)
   }
   return lines.join('\n')
+}
+
+// ── Previews ────────────────────────────────────────────────────────────────
+// Downloading answers "give me the file". The question people actually arrive
+// with is "did this run produce the right thing", and that one is answered by
+// looking, not by saving to disk and opening another application.
+//
+// Everything here is bounded before it is read. A preview of a 2 GB parquet is
+// not a preview, and the response seam takes a whole body rather than a
+// stream, so the caps are what keep a preview from becoming an allocation.
+
+/** Largest image inlined as a data URL. Base64 inflates by about a third. */
+export const MAX_IMAGE_PREVIEW_BYTES = 2 * 1024 * 1024
+
+/** Bytes of a text file read for the head preview. */
+export const MAX_TEXT_PREVIEW_BYTES = 64 * 1024
+
+/** Rows and columns a table preview renders before stopping. */
+export const MAX_TABLE_ROWS = 50
+export const MAX_TABLE_COLUMNS = 30
+
+export type { PreviewKind }
+
+/** One artifact, as much of it as is safe and useful to show. */
+export interface ArtifactPreview {
+  name: string
+  kind: PreviewKind
+  bytes: number
+  /** Data URL, for `kind: 'image'`. */
+  dataUrl?: string
+  /** Header plus rows, for `kind: 'table'`. */
+  rows?: string[][]
+  /** Decoded head, for `kind: 'text'`. */
+  text?: string
+  /** Whether what is shown is less than what is there. */
+  truncated?: boolean
+  /** Why there is nothing to show, for `kind: 'none'`. */
+  reason?: string
+}
+
+/**
+ * Split one delimited line, honouring RFC 4180 quoting.
+ *
+ * Worth doing properly rather than splitting on the delimiter: a quoted field
+ * containing a comma is ordinary in biological data (gene descriptions are
+ * full of them), and a preview that silently shifts every column after it is
+ * worse than no preview — it invites a conclusion from a misread table.
+ */
+export function splitDelimited(line: string, delimiter: string): string[] {
+  const fields: string[] = []
+  let field = ''
+  let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!
+    if (quoted) {
+      if (char !== '"') { field += char; continue }
+      // A doubled quote inside a quoted field is one literal quote.
+      if (line[index + 1] === '"') { field += '"'; index += 1; continue }
+      quoted = false
+      continue
+    }
+    if (char === '"') { quoted = true; continue }
+    if (char === delimiter) { fields.push(field); field = ''; continue }
+    field += char
+  }
+  fields.push(field)
+  return fields
+}
+
+/**
+ * Read as much of one artifact as is worth showing.
+ *
+ * @param path - already through `resolveArtifact`; this does no containment
+ *   checking of its own and must never be called with an unchecked path.
+ * @param name - the display name, which decides how the bytes are read.
+ */
+export async function previewArtifact(path: string, name: string): Promise<ArtifactPreview> {
+  const info = await stat(path)
+  const bytes = info.size
+  const extension = extensionOf(name)
+  const base: ArtifactPreview = { name, kind: 'none', bytes }
+
+  if (bytes === 0) return { ...base, reason: 'empty file' }
+
+  if (RASTER.has(extension)) {
+    if (bytes > MAX_IMAGE_PREVIEW_BYTES) {
+      return { ...base, reason: `image is ${bytes} bytes, over the inline preview limit` }
+    }
+    const body = await readFile(path)
+    const mime = contentTypeOf(name)
+    return { ...base, kind: 'image', dataUrl: `data:${mime};base64,${body.toString('base64')}` }
+  }
+
+  // SVG and HTML fall through to the text branch rather than being rendered;
+  // artifacts-shared.ts says why.
+  const delimiter = DELIMITED[extension]
+  if (delimiter !== undefined || TEXTUAL.has(extension)) {
+    const handle = await readFile(path)
+    const slice = handle.subarray(0, MAX_TEXT_PREVIEW_BYTES)
+    const truncated = bytes > slice.byteLength
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(slice)
+
+    if (delimiter === undefined) {
+      return { ...base, kind: 'text', text, ...(truncated ? { truncated } : {}) }
+    }
+
+    // Drop a trailing partial line when the read was cut short, so the table
+    // never shows a row that does not exist in the file.
+    const lines = text.split(/\r?\n/)
+    if (truncated && lines.length > 1) lines.pop()
+    const rows = lines
+      .filter(line => line !== '')
+      .slice(0, MAX_TABLE_ROWS)
+      .map(line => splitDelimited(line, delimiter).slice(0, MAX_TABLE_COLUMNS))
+    if (rows.length === 0) return { ...base, reason: 'no rows' }
+    return {
+      ...base,
+      kind: 'table',
+      rows,
+      ...(truncated || lines.filter(l => l !== '').length > MAX_TABLE_ROWS ? { truncated: true } : {}),
+    }
+  }
+
+  return { ...base, reason: 'no preview for this file type' }
 }

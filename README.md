@@ -40,7 +40,7 @@ what it needs.
 | 🗄️ **A data lake skill** | The biomedical datasets actually downloaded on this machine, with exact paths, sizes, and licence flags. Prefer local data over a web round trip. |
 | 🔧 **A software skill** | The bioinformatics packages and CLI tools actually installed here — so the agent reaches for `samtools` instead of reimplementing it. |
 | 🔍 **An honest environment report** | The `/biomni` command and a Settings page telling you exactly what works, what doesn't, and which package would fix it — with the price, so a 151 MB single-function dependency never reads like a free one. |
-| 📤 **An outlet for results** | `run_python` returns text, capped — a plot cannot be printed and a real table gets truncated. The interpreter has an output directory bound as `BIOMNI_OUT`; files written there are named back to the model and downloadable from Settings → Biomni. |
+| 📤 **An outlet for results** | `run_python` returns text, capped — a plot cannot be printed and a real table gets truncated. The interpreter has an output directory bound as `BIOMNI_OUT`; files written there are named back to the model, and Settings → Biomni shows them: a figure inline, a CSV as a table, anything textual as its head — or downloads the file whole. |
 | 🧪 **A data lake browser** | Settings → Biomni lists all 76 datasets with sizes, marks what is on disk, and fetches one at a time. Non-commercial datasets need an explicit acknowledgement. |
 
 It is an ordinary out-of-tree plugin. It does not fork or patch the harness.

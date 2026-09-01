@@ -336,6 +336,12 @@ describe('the artifact outlet', () => {
     // Symlink creation can be unavailable; the refusal is what matters.
     if (result.includes('linked')) {
       await expect(resolveArtifact(outDir, 'innocent.txt')).resolves.toBeUndefined()
+      // And the tool result must not have claimed it either. Naming a file the
+      // operator is then refused is the shape of claim this plugin exists to
+      // prevent, so the worker skips links for the same reason the route does.
+      expect(result).not.toContain('innocent.txt')
+      const listing = await listArtifacts(outDir)
+      expect(listing.entries.map(entry => entry.name)).not.toContain('innocent.txt')
     }
   })
 })

@@ -86,6 +86,12 @@ def _snapshot():
     Recursive, so a call that writes into a subdirectory is still reported.
     Never raises: an unreadable output directory must not fail the execution
     that happened to run beside it.
+
+    Symlinks are skipped, and that is the same rule the operator side applies:
+    the listing walks with dirent types and the download route compares real
+    paths, so a link out of this directory is refused there. Reporting one here
+    would tell the model it produced a file nobody can fetch — the exact shape
+    of claim this plugin exists to prevent.
     """
     if not OUT_DIR.is_dir():
         return {}
@@ -93,7 +99,7 @@ def _snapshot():
     try:
         for path in OUT_DIR.rglob("*"):
             try:
-                if not path.is_file():
+                if path.is_symlink() or not path.is_file():
                     continue
                 stat = path.stat()
                 out[str(path.relative_to(OUT_DIR))] = (stat.st_size, stat.st_mtime_ns)
