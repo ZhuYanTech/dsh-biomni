@@ -4,11 +4,29 @@
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { renderFrame } from './channel.ts'
-import type { WorkerOwner, WorkerPool } from './workers.ts'
+import type { Retirement, WorkerOwner, WorkerPool } from './workers.ts'
 
 /** What the model is told when its interpreter had to be replaced. */
 export const RESET_NOTICE
   = 'The persistent Python interpreter was reset; the next call starts with an empty namespace.'
+
+/**
+ * What the model is told about an interpreter that went away between calls.
+ *
+ * It has to be told. The alternative is a namespace that silently emptied
+ * itself, and a model that reasons on from a dataframe it loaded an hour ago
+ * and no longer has — the same class of failure as an unadvertised missing
+ * dependency, arrived at from the other direction. The notice therefore says
+ * what happened, why, and what to do about it, and leads the output rather
+ * than trailing it.
+ */
+export function retirementNotice(retirement: Retirement): string {
+  const minutes = Math.max(1, Math.round(retirement.idleMs / 60_000))
+  const why = retirement.reason === 'idle'
+    ? `this session's Python interpreter was idle for about ${minutes} minute${minutes === 1 ? '' : 's'} and was retired to free memory`
+    : 'the configured Python interpreter changed, so this session\'s previous one was retired'
+  return `Note: ${why}. This call ran in a NEW interpreter with an empty namespace — imports, dataframes, and fitted models from earlier calls are gone. Re-run whatever setup you still need before relying on it.`
+}
 
 /** The live settings slice the tool reads on every call. */
 export interface RunPythonSettings {
@@ -71,8 +89,12 @@ export function runPythonTool(
         const timeout = AbortSignal.timeout(timeoutMs)
         const signal = AbortSignal.any([exec.signal, timeout])
         const worker = await workers.get(owner)
+        const notice = worker.retiredBecause === undefined
+          ? ''
+          : `${retirementNotice(worker.retiredBecause)}\n\n`
         try {
-          return renderFrame(await worker.channel.request(args.code, signal))
+          const frame = renderFrame(await worker.channel.request(args.code, signal))
+          return `${notice}${frame}`
         } catch (cause) {
           // The interpreter's state is unknowable after a timeout or a crash,
           // so it is replaced rather than handed back in an unclear condition.
@@ -80,7 +102,12 @@ export function runPythonTool(
           const reason = timeout.aborted
             ? `execution exceeded ${timeoutMs}ms`
             : String((cause as Error | undefined)?.message ?? cause)
-          return `${reason}\n${RESET_NOTICE}`
+          return `${notice}${reason}\n${RESET_NOTICE}`
+        } finally {
+          // The idle clock runs from the END of a call: armed only at the
+          // start, a snippet that takes longer than the timeout would retire
+          // the interpreter it is still running in.
+          workers.touch(owner)
         }
       })
     },

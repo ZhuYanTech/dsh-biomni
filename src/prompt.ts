@@ -51,7 +51,10 @@ the bash tool: that is a different interpreter, without the libraries below, and
 cannot see state from earlier calls.
 
 State persists across \`run_python\` calls for the whole session. Import once, load data
-once, then build on what is already bound.
+once, then build on what is already bound. If an interpreter is left unused for a long
+time it may be retired to free memory; when that happens the next result says so
+explicitly, and only then is the namespace empty. Trust that notice rather than
+re-importing defensively.
 
 ## Biomedical tool library
 

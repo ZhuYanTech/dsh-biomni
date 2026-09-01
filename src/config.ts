@@ -12,8 +12,12 @@
  */
 import z from '@deepseek-ai/schemastery'
 import {
+  clampIdleTimeoutMs,
   clampTimeoutMs,
   DATA_PATH_DEFAULT,
+  IDLE_TIMEOUT_MS_DEFAULT,
+  IDLE_TIMEOUT_MS_MAX,
+  IDLE_TIMEOUT_MS_MIN,
   PYTHON_DEFAULT,
   TIMEOUT_MS_DEFAULT,
   TIMEOUT_MS_MAX,
@@ -43,6 +47,9 @@ export const PrefsSchema: z<BiomniPrefs> = z.object({
   dataPath: z.string()
     .default(DATA_PATH_DEFAULT)
     .description('Root holding biomni_data/data_lake. Empty follows Biomni: $BIOMNI_PATH, $BIOMNI_DATA_PATH, then ./data.'),
+  idleTimeoutMs: z.union([z.const(0), z.number().min(IDLE_TIMEOUT_MS_MIN).max(IDLE_TIMEOUT_MS_MAX)])
+    .default(IDLE_TIMEOUT_MS_DEFAULT)
+    .description('Retire an interpreter after this long unused, in milliseconds. 0 keeps it for the life of the agent.'),
 }) as unknown as z<BiomniPrefs>
 
 /** The composition row. */
@@ -65,6 +72,9 @@ export const Config = z.object({
   dataPath: z.string()
     .default(DATA_PATH_DEFAULT)
     .description('Root holding biomni_data/data_lake; empty resolves as Biomni does.'),
+  idleTimeoutMs: z.number()
+    .default(IDLE_TIMEOUT_MS_DEFAULT)
+    .description('Retire an interpreter after this long unused; 0 keeps it for the life of the agent.'),
 })
 
 /** The resolved composition row. */
@@ -75,6 +85,7 @@ export interface BiomniConfig {
   guidance: string
   guardShellPython: boolean
   dataPath: string
+  idleTimeoutMs: number
 }
 
 /**
@@ -88,5 +99,6 @@ export function prefsBaseOf(config: BiomniConfig): BiomniPrefs {
     timeoutMs: clampTimeoutMs(config.timeoutMs),
     guardShellPython: config.guardShellPython,
     dataPath: config.dataPath,
+    idleTimeoutMs: clampIdleTimeoutMs(config.idleTimeoutMs),
   }
 }

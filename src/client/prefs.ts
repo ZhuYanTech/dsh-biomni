@@ -13,12 +13,13 @@
  */
 import {
   BIOMNI_PREFS_DEFAULTS,
+  clampIdleTimeoutMs,
   clampTimeoutMs,
   type BiomniPrefs,
 } from '../prefs-shared.ts'
 import { api } from './api.ts'
 
-export { BIOMNI_PREFS_DEFAULTS, clampTimeoutMs }
+export { BIOMNI_PREFS_DEFAULTS, clampIdleTimeoutMs, clampTimeoutMs }
 export type { BiomniPrefs }
 
 /**
@@ -46,6 +47,11 @@ export function parsePrefs(value: unknown): BiomniPrefs {
     dataPath: typeof record.dataPath === 'string'
       ? record.dataPath
       : BIOMNI_PREFS_DEFAULTS.dataPath,
+    // 0 is meaningful here too — "never retire" — and clampIdleTimeoutMs
+    // preserves it rather than folding it up to the floor.
+    idleTimeoutMs: typeof record.idleTimeoutMs === 'number' && Number.isFinite(record.idleTimeoutMs)
+      ? clampIdleTimeoutMs(record.idleTimeoutMs)
+      : BIOMNI_PREFS_DEFAULTS.idleTimeoutMs,
   }
 }
 

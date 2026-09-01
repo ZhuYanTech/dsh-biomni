@@ -4,7 +4,15 @@
  * working when the settings document is absent, stale, or hand-edited.
  */
 import { describe, expect, it } from 'vitest'
-import { BIOMNI_PREFS_DEFAULTS, clampTimeoutMs, TIMEOUT_MS_MAX, TIMEOUT_MS_MIN } from '../src/prefs-shared.ts'
+import {
+  BIOMNI_PREFS_DEFAULTS,
+  clampIdleTimeoutMs,
+  clampTimeoutMs,
+  IDLE_TIMEOUT_MS_MAX,
+  IDLE_TIMEOUT_MS_MIN,
+  TIMEOUT_MS_MAX,
+  TIMEOUT_MS_MIN,
+} from '../src/prefs-shared.ts'
 import { parsePrefs } from '../src/client/prefs.ts'
 
 describe('parsePrefs', () => {
@@ -20,11 +28,13 @@ describe('parsePrefs', () => {
       timeoutMs: 30_000,
       guardShellPython: false,
       dataPath: '/data/bio',
+      idleTimeoutMs: 900_000,
     })).toEqual({
       python: '/venv/bin/python',
       timeoutMs: 30_000,
       guardShellPython: false,
       dataPath: '/data/bio',
+      idleTimeoutMs: 900_000,
     })
   })
 
@@ -36,6 +46,7 @@ describe('parsePrefs', () => {
         timeoutMs: BIOMNI_PREFS_DEFAULTS.timeoutMs,
         guardShellPython: BIOMNI_PREFS_DEFAULTS.guardShellPython,
         dataPath: BIOMNI_PREFS_DEFAULTS.dataPath,
+        idleTimeoutMs: BIOMNI_PREFS_DEFAULTS.idleTimeoutMs,
       })
   })
 
@@ -57,6 +68,24 @@ describe('parsePrefs', () => {
     expect(parsePrefs({ timeoutMs: 1 }).timeoutMs).toBe(TIMEOUT_MS_MIN)
     expect(parsePrefs({ timeoutMs: 999_999_999 }).timeoutMs).toBe(TIMEOUT_MS_MAX)
     expect(parsePrefs({ timeoutMs: Number.NaN }).timeoutMs).toBe(BIOMNI_PREFS_DEFAULTS.timeoutMs)
+  })
+
+  it('keeps a zero idle timeout, which means never retire', () => {
+    // Clamping 0 up to the five-minute floor would turn "leave my interpreters
+    // alone" into the single most aggressive setting on the page.
+    expect(parsePrefs({ idleTimeoutMs: 0 }).idleTimeoutMs).toBe(0)
+    expect(parsePrefs({ idleTimeoutMs: 60_000 }).idleTimeoutMs).toBe(IDLE_TIMEOUT_MS_MIN)
+    expect(parsePrefs({ idleTimeoutMs: 'never' }).idleTimeoutMs)
+      .toBe(BIOMNI_PREFS_DEFAULTS.idleTimeoutMs)
+  })
+})
+
+describe('clampIdleTimeoutMs', () => {
+  it('bounds a real timeout but passes zero through', () => {
+    expect(clampIdleTimeoutMs(1)).toBe(IDLE_TIMEOUT_MS_MIN)
+    expect(clampIdleTimeoutMs(0)).toBe(0)
+    expect(clampIdleTimeoutMs(-5)).toBe(0)
+    expect(clampIdleTimeoutMs(Number.POSITIVE_INFINITY)).toBe(IDLE_TIMEOUT_MS_MAX)
   })
 })
 

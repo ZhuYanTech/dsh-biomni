@@ -97,6 +97,7 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     get timeoutMs() { return scope.get().timeoutMs },
     get guardShellPython() { return scope.get().guardShellPython },
     get dataPath() { return scope.get().dataPath },
+    get idleTimeoutMs() { return scope.get().idleTimeoutMs },
   }
 
   // The in-process face the fenced routes call. `describe()` is the seam's own
@@ -136,7 +137,9 @@ export function apply(ctx: Context, config: BiomniConfig): void {
     if (!pythonChanged && !dataPathChanged) return
     currentPython = next.python
     currentDataPath = next.dataPath
-    if (pythonChanged) void workers.resetAll()
+    // Tagged, so the next call in each session explains its empty namespace
+    // rather than leaving the model to discover it as a NameError.
+    if (pythonChanged) void workers.resetAll('settings')
     for (const react of onCatalogChanged) react()
   })
 

@@ -27,7 +27,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
+  clampIdleTimeoutMs,
   clampTimeoutMs,
+  IDLE_TIMEOUT_MS_MAX,
   TIMEOUT_MS_MAX,
   TIMEOUT_MS_MIN,
   type BiomniPrefs,
@@ -94,6 +96,7 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
   const [pythonDraft, setPythonDraft] = useState<string>(BIOMNI_PREFS_DEFAULTS.python)
   const [dataPathDraft, setDataPathDraft] = useState<string>(BIOMNI_PREFS_DEFAULTS.dataPath)
   const [timeoutDraft, setTimeoutDraft] = useState<string>(String(BIOMNI_PREFS_DEFAULTS.timeoutMs / 1000))
+  const [idleDraft, setIdleDraft] = useState<string>(String(BIOMNI_PREFS_DEFAULTS.idleTimeoutMs / 60_000))
   const [error, setError] = useState<string | null>(null)
 
   const [probing, setProbing] = useState(false)
@@ -119,6 +122,7 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
     setPythonDraft(next.python)
     setDataPathDraft(next.dataPath)
     setTimeoutDraft(String(Math.round(next.timeoutMs / 1000)))
+    setIdleDraft(String(Math.round(next.idleTimeoutMs / 60_000)))
     return next
   }, [])
 
@@ -266,6 +270,32 @@ export function BiomniSection(_props: BiomniSectionProps): ReactNode {
             onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
           />
           <span className={css.unit}>{t('timeoutUnit')}</span>
+        </Row>
+
+        <Row title={t('idleLabel')} desc={t('idleDesc')}>
+          <input
+            type="number"
+            className={css.numberInput}
+            value={idleDraft}
+            min={0}
+            max={Math.floor(IDLE_TIMEOUT_MS_MAX / 60_000)}
+            aria-label={t('idleLabel')}
+            onChange={event => { setIdleDraft(event.currentTarget.value) }}
+            onBlur={() => {
+              const minutes = Number(idleDraft)
+              if (!Number.isFinite(minutes)) {
+                setIdleDraft(String(Math.round(prefs.idleTimeoutMs / 60_000)))
+                return
+              }
+              // 0 survives the clamp: it is the "never retire" setting, not a
+              // value below the floor.
+              const idleTimeoutMs = clampIdleTimeoutMs(minutes * 60_000)
+              setIdleDraft(String(Math.round(idleTimeoutMs / 60_000)))
+              if (idleTimeoutMs !== prefs.idleTimeoutMs) commit({ idleTimeoutMs })
+            }}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+          />
+          <span className={css.unit}>{t('idleUnit')}</span>
         </Row>
 
         <Row title={t('guardLabel')} desc={t('guardDesc')}>

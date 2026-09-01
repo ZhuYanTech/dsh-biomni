@@ -4,6 +4,33 @@ Measured figures throughout. Where a number appears here it was read off a real
 run, not estimated — several of these releases exist because an estimate turned
 out to be wrong.
 
+## 0.3.0
+
+**Idle interpreters are retired, and the model is told.**
+
+An interpreter is a Python process holding everything the session imported.
+Measured with the usual stack loaded — numpy, pandas, scipy, matplotlib,
+scikit-learn — that is **298 MB resident against 74 MB bare**, and nothing
+reclaimed it until the agent went away. A few sessions left open overnight is
+a gigabyte nobody is using.
+
+- A new `idleTimeoutMs` setting (default 30 minutes, `0` = never) retires an
+  interpreter that has gone that long without a call. The clock runs from the
+  END of a call, so a snippet that takes an hour is never retired while it is
+  still running, and the setting is read per call — lowering it in Settings
+  does not wait for sessions to cycle.
+- **The next call says what happened.** This is the whole reason the feature
+  is more than a `setTimeout`: a namespace that silently empties itself is the
+  same failure as an unadvertised missing dependency, reached from the other
+  side — the model reasons on from a dataframe it loaded an hour ago and no
+  longer has. The notice leads the result, names the cause, and says to set up
+  again.
+- Changing the interpreter path mid-session was already retiring live
+  interpreters, silently. It now leaves the same kind of notice, distinguished
+  by cause.
+- `/biomni` reports the policy, since it is the one setting on that page that
+  can take work away.
+
 ## 0.2.1
 
 **You can see the results, not just download them.**

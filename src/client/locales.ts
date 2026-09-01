@@ -25,6 +25,9 @@ export const zh = {
   timeoutLabel: '单次执行超时',
   timeoutDesc: '一段代码的挂钟时间上限。超时会重置该会话的解释器——调用被中途放弃后，它的状态已不可知。',
   timeoutUnit: '秒',
+  idleLabel: '闲置回收',
+  idleDesc: '一个解释器多久没被调用就退役。实测：装完常用那套（numpy / pandas / scipy / matplotlib / scikit-learn）之后，一个进程常驻 298 MB，空解释器是 74 MB——几个开着过夜的会话就是一个 G。回收会清空命名空间，所以下一次调用会明确告诉模型「你的解释器被回收了，重新准备」，而不是让它撞上 NameError。填 0 表示不回收，跟着 agent 的生命周期走。',
+  idleUnit: '分钟（0 = 不回收）',
   guardLabel: '拦截 shell 中的 python',
   guardDesc: '拒绝 bash 里直接调用 python / pip 的命令，并引导模型改用 run_python。实测：仅靠提示词只能纠正模型的第一次选择，任务中途它仍会回退到 bash python3 -c，落到没有依赖库的解释器上。',
 
@@ -117,6 +120,9 @@ export const en: Record<keyof typeof zh, string> = {
   timeoutLabel: 'Snippet timeout',
   timeoutDesc: 'Wall-clock limit for one snippet. A timeout resets that session\'s interpreter: its state is unknowable once a call is abandoned mid-execution.',
   timeoutUnit: 'seconds',
+  idleLabel: 'Retire idle interpreters',
+  idleDesc: 'How long an interpreter may sit unused before it is retired. Measured: a worker with the usual stack imported (numpy, pandas, scipy, matplotlib, scikit-learn) holds 298 MB resident against 74 MB bare — a few sessions left open overnight is a gigabyte. Retiring one empties the namespace, so the next call TELLS the model its interpreter was retired and to set up again, rather than letting it walk into a NameError. 0 keeps every interpreter for the life of its agent.',
+  idleUnit: 'minutes (0 = never)',
   guardLabel: 'Guard shell python',
   guardDesc: 'Deny bash commands that invoke python or pip directly, redirecting the model to run_python. Measured: prompt guidance alone fixes only the model\'s FIRST choice — mid-task it still falls back to bash python3 -c, reaching an interpreter without the library.',
 

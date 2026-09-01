@@ -44,6 +44,20 @@ export interface BiomniPrefs {
    * stale, it is wrong.
    */
   dataPath: string
+  /**
+   * How long an interpreter may sit unused before it is retired, in
+   * milliseconds. `0` keeps every interpreter until its agent goes away.
+   *
+   * This is a memory setting with a correctness edge. Measured on a worker
+   * with the usual stack imported (numpy, pandas, scipy, matplotlib,
+   * scikit-learn): **298 MB resident, against 74 MB bare** — so a handful of
+   * sessions left open overnight is a gigabyte nobody is using. But retiring
+   * one costs the namespace, and a namespace that vanishes silently is the
+   * same failure this plugin exists to prevent: the model believes `df` is
+   * still bound. So the retirement is REPORTED on the next call, and the
+   * default is generous enough that it is rare.
+   */
+  idleTimeoutMs: number
 }
 
 /** Range contract of {@link BiomniPrefs.timeoutMs}. */
@@ -57,17 +71,44 @@ export const PYTHON_DEFAULT = 'python3'
 /** Empty data root: resolve as Biomni does, inside Python where the env is visible. */
 export const DATA_PATH_DEFAULT = ''
 
+/**
+ * Range contract of {@link BiomniPrefs.idleTimeoutMs}. `0` disables retirement.
+ *
+ * The floor is five minutes because anything shorter turns a coffee break into
+ * lost state, and the memory it would reclaim is not worth that. The default
+ * is thirty: long enough that an interpreter almost never disappears out from
+ * under work in progress, short enough that an abandoned session is not still
+ * holding 298 MB an hour later.
+ */
+export const IDLE_TIMEOUT_MS_MIN = 300_000
+export const IDLE_TIMEOUT_MS_MAX = 86_400_000
+export const IDLE_TIMEOUT_MS_DEFAULT = 1_800_000
+
 /** Fallback prefs used whenever the settings document is unreachable or malformed. */
 export const BIOMNI_PREFS_DEFAULTS: BiomniPrefs = {
   python: PYTHON_DEFAULT,
   timeoutMs: TIMEOUT_MS_DEFAULT,
   guardShellPython: true,
   dataPath: DATA_PATH_DEFAULT,
+  idleTimeoutMs: IDLE_TIMEOUT_MS_DEFAULT,
 }
 
 /** Clamp one snippet timeout into the contract range (shared by schema and client reads). */
 export function clampTimeoutMs(value: number): number {
   return Math.min(TIMEOUT_MS_MAX, Math.max(TIMEOUT_MS_MIN, Math.round(value)))
+}
+
+/**
+ * Clamp an idle timeout, keeping `0` — which means "never retire" — intact.
+ *
+ * Folding 0 up to the five-minute floor would turn "leave my interpreters
+ * alone" into the most aggressive setting available, so it is passed through
+ * rather than clamped.
+ */
+export function clampIdleTimeoutMs(value: number): number {
+  const rounded = Math.round(value)
+  if (rounded <= 0) return 0
+  return Math.min(IDLE_TIMEOUT_MS_MAX, Math.max(IDLE_TIMEOUT_MS_MIN, rounded))
 }
 
 // ── The environment probe report ────────────────────────────────────────────

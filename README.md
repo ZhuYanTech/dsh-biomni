@@ -35,7 +35,7 @@ what it needs.
 
 | | |
 |---|---|
-| 🐍 **A Python interpreter that remembers** | One process per session. Imports, dataframes and fitted models survive from one call to the next, so the agent works in small steps instead of resending a script every time. |
+| 🐍 **A Python interpreter that remembers** | One process per session. Imports, dataframes and fitted models survive from one call to the next, so the agent works in small steps instead of resending a script every time. One left unused for half an hour is retired to reclaim its memory — and the agent is told, rather than discovering it as a `NameError`. |
 | 🧬 **21 research-function skills** | Biomni's biomedical library, one skill per module, carrying real signatures — parameter types, defaults, and what each one means. Loaded on demand, so 218 functions cost ~1.6k tokens of context instead of ~26k. *(Needs Biomni installed.)* |
 | 🗄️ **A data lake skill** | The biomedical datasets actually downloaded on this machine, with exact paths, sizes, and licence flags. Prefer local data over a web round trip. |
 | 🔧 **A software skill** | The bioinformatics packages and CLI tools actually installed here — so the agent reaches for `samtools` instead of reimplementing it. |
@@ -142,6 +142,7 @@ biomni:
   python: /abs/path/to/.venv/bin/python   # the venv from step 2
   dataPath: /abs/path/to/data             # optional: holds biomni_data/
   timeoutMs: 600000
+  idleTimeoutMs: 1800000                  # retire an unused interpreter after 30 min; 0 = never
   guardShellPython: true
 ```
 
@@ -184,6 +185,13 @@ name. Nothing downloaded simply means no data-lake skill: a definite answer, not
 can be downloaded, readable, and still restricted, so the licence is tracked as its own fact,
 named in the skill, and enforced at the one point where it binds: fetching a restricted dataset
 needs an explicit acknowledgement.
+
+**An idle interpreter costs 298 MB.** Measured with the usual stack imported — numpy,
+pandas, scipy, matplotlib, scikit-learn — against 74 MB for a bare one, held for as long
+as the session exists. So one left unused for `idleTimeoutMs` is retired, and **the next
+call tells the agent that its namespace is empty and why**. That notice is the point: a
+namespace that quietly empties itself is the same failure as an unadvertised missing
+dependency, arrived at from the other direction.
 
 **Python belongs to `run_python`, not the shell.** A guard stops the agent from reaching a
 different interpreter through bash — but it lets through calls that name *your* configured
