@@ -138,13 +138,14 @@ def main():
     sizes = remote_sizes(list(datasets))
     manifest = {
         "_comment": (
-            "Captured from Biomni's env_desc by scripts/vendor-manifest.py. "
-            "Data, not code — it lets the data lake and software catalogs work "
-            "without a Biomni install. A live Biomni always takes precedence."
+            "Captured from Biomni's env_desc by scripts/vendor-manifest.py, and "
+            "modified: reshaped into this structure and annotated with dataset "
+            "sizes. Data, not code — it lets the data lake and software catalogs "
+            "work without a Biomni install. A live Biomni always takes precedence."
         ),
         "biomni": version_of(root),
         "source": "biomni/env_desc.py + env_desc_cm.py",
-        "license": "MIT (Biomni, snap-stanford). Individual datasets carry their own terms.",
+        "license": "Apache-2.0 (Biomni, snap-stanford). Individual datasets carry their own terms.",
         "bucket": BUCKET,
         # Sorted so a re-capture produces a reviewable diff rather than a reshuffle.
         # Each entry is {description, bytes} — bytes null when the bucket did

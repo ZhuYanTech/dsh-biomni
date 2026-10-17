@@ -211,4 +211,15 @@ the constraints that are easy to break and hard to notice.
 
 ## License
 
-MIT. Biomni is MIT-licensed too; individual datasets in its data lake carry their own terms.
+MIT, for this plugin. [Biomni](https://github.com/snap-stanford/Biomni) is **Apache-2.0** — a
+different licence with different obligations, which is why the boundary is worth stating: the
+library is not redistributed here. The operator installs it into their own interpreter, and what
+this repo ships is the bridge to it.
+
+The one piece of Biomni that does travel with this package is `data/biomni-manifest.json`,
+captured from its `env_desc.py` so the data lake and software catalogs still work before Biomni
+is installed. It is Apache-2.0 content, modified (reshaped, and annotated with dataset sizes),
+and the file records both facts.
+
+Individual datasets in the data lake carry their own terms, tracked separately from availability
+(see [Good to know](#good-to-know)).

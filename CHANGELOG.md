@@ -50,6 +50,14 @@ mirrors, and was itself checked by breaking the mirror in both directions.
   pinned a minor behind what DSH resolved). `.volatile()` existed in the types
   and not in the runtime — green typecheck, `TypeError` on load.
 
+**Biomni's licence was stated wrong.** Both READMEs and the vendored manifest
+said MIT; Biomni 0.0.8 is **Apache-2.0** (PyPI `license_expression`, and the
+repo's own `LICENSE`). Apache-2.0 carries obligations MIT does not, so the
+boundary is now written out rather than implied: the library is never
+redistributed here — the operator installs it — and the one piece that does
+travel with the package, `data/biomni-manifest.json`, is captured from
+`env_desc.py`, is modified, and now says both in the file.
+
 ## 0.3.0
 
 **Idle interpreters are retired, and the model is told.**
