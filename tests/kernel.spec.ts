@@ -16,12 +16,12 @@ import { apply, Config, inject, name } from '../src/index.ts'
 import type { BiomniConfig } from '../src/config.ts'
 import { listArtifacts, resolveArtifact } from '../src/artifacts.ts'
 import { OUTPUT_DIR_NAME } from '../src/python/paths.ts'
-import { stubContext, stubOwner, workspaceRoot } from './stubs.ts'
+import { stubContext, stubOwner, workspaceRoot, applyWithConfig } from './stubs.ts'
 
 const PYTHON = process.env.DSH_BIOMNI_PYTHON ?? 'python3'
 
 const { ctx, rec } = stubContext()
-apply(ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+applyWithConfig(ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
 
 const owner = stubOwner(rec)
 const tool = rec.tools[0]!
@@ -78,7 +78,7 @@ describe('plugin shape', () => {
     // edit, and the shared one above is still serving the live-interpreter
     // tests.
     const isolated = stubContext()
-    apply(isolated.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+    applyWithConfig(isolated.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
     expect(isolated.rec.invalidations).toBe(0)
     isolated.rec.setUser({ python: '/some/other/venv/bin/python' })
     expect(isolated.rec.invalidations).toBe(1)
@@ -90,7 +90,7 @@ describe('plugin shape', () => {
 
   it('keeps the interpreter when the deployment has no skills service', async () => {
     const bare = stubContext({ withoutSkills: true })
-    apply(bare.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+    applyWithConfig(bare.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
     expect(bare.rec.tools).toHaveLength(1)
     expect(bare.rec.skillProviders).toHaveLength(0)
     await Promise.all(bare.rec.disposers.map(dispose => dispose()))
@@ -101,7 +101,7 @@ describe('plugin shape', () => {
     // @deepseek-ai/dsh-headless has no webServer, and losing run_python there
     // because of a UI nobody asked for would be the wrong trade.
     const headless = stubContext({ withoutWeb: true })
-    apply(headless.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+    applyWithConfig(headless.ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
     expect(headless.rec.tools).toHaveLength(1)
     expect(headless.rec.commands.map(command => command.name)).toContain('biomni')
     expect(headless.rec.routes).toHaveLength(0)

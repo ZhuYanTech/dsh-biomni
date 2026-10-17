@@ -1,8 +1,8 @@
 {
   "id": "dsh-external/dsh-biomni",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "main": "./lib/index.js",
-  "description": "会话级持久 Python 解释器，装载 Biomni 生物医学工具库；每个工具模块一个 skill，签名从实装的解释器现场生成；设置页报告该解释器实际可用的模块与函数",
+  "description": "\u4f1a\u8bdd\u7ea7\u6301\u4e45 Python \u89e3\u91ca\u5668\uff0c\u88c5\u8f7d Biomni \u751f\u7269\u533b\u5b66\u5de5\u5177\u5e93\uff1b\u6bcf\u4e2a\u5de5\u5177\u6a21\u5757\u4e00\u4e2a skill\uff0c\u7b7e\u540d\u4ece\u5b9e\u88c5\u7684\u89e3\u91ca\u5668\u73b0\u573a\u751f\u6210\uff1b\u8bbe\u7f6e\u9875\u62a5\u544a\u8be5\u89e3\u91ca\u5668\u5b9e\u9645\u53ef\u7528\u7684\u6a21\u5757\u4e0e\u51fd\u6570",
   "engines": {
     "dsh": ">=0.0.1"
   },

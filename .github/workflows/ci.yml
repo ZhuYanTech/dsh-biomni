@@ -93,7 +93,7 @@ jobs:
       # preview moves fast and upstream warns of compatibility-breaking
       # changes, so an unpinned CLI would make this job's failures ambiguous.
       - name: install the dsh CLI
-        run: npm i -g @deepseek-ai/dsh@0.1.0-rc.6
+        run: npm i -g @deepseek-ai/dsh@0.2.0-rc.2
 
       - run: pnpm install --frozen-lockfile
 

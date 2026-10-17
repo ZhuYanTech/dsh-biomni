@@ -4,6 +4,52 @@ Measured figures throughout. Where a number appears here it was read off a real
 run, not estimated — several of these releases exist because an estimate turned
 out to be wrong.
 
+## 0.4.0
+
+**Runs on DeepSeek Harness 0.2.**
+
+DSH 0.2 replaced the settings architecture outright. `settingsNamespace()` and
+`ctx.settings.register()` are gone, `settings.yaml` is gone (migrated into the
+profile on first boot), and a plugin's own cordis `Config` is now what the
+Settings page renders. So the two layers this plugin kept — a composition row
+with a `PrefsSchema` user layer over it — collapse into one schema where
+`.volatile()` marks per field what applies live.
+
+- Live fields arrive as **references**, not values: `config.python.get()` is
+  the current interpreter. That makes the old rule enforceable instead of
+  remembered — caching a setting at apply time no longer type-checks.
+- `description` and `guidance` stay non-volatile, so editing them remounts the
+  plugin. That is the right semantics: they ride the request prefix.
+- `scope.watch()` became the `settings/document-updated` event, which carries
+  only an id and a revision; the comparison that decides whether to retire live
+  interpreters moved into the plugin.
+- Verified against a real dsh 0.2.0-rc.2: all 8 mount checks pass, including
+  the settings route resolving a configured interpreter and the shell serving
+  our client bundle.
+
+**Found because nothing was watching.** The host service faces in
+`src/context-types.ts` are hand-written mirrors, so `pnpm typecheck` had been
+validating our copy of the API rather than the API — `ctx.settings.register()`
+had been absent upstream for a month against a green build.
+`tests/context-drift.spec.ts` now asserts that the real types satisfy the
+mirrors, and was itself checked by breaking the mirror in both directions.
+
+**Three bugs the upgrade surfaced, none of them caused by it:**
+
+- `test/verify-bundle.sh` checked tarball contents with `tar | grep -q` under
+  `set -o pipefail`. `grep -q` exits on its first match, `tar` takes SIGPIPE,
+  and the pipeline reports failure — so the check had become a race against
+  the archive's size, passing while it was small and reporting every asset
+  missing once it grew.
+- The CSS-modules class map was built from a lightningcss export whose key
+  order comes from a Rust HashMap. Two builds of identical source emitted
+  different bytes, which made the artifact unreproducible and broke the one
+  check that proves the shell serves the bundle we built. Sorted now, and two
+  consecutive builds are byte-identical.
+- Two copies of `@deepseek-ai/schemastery` in the dependency graph (ours
+  pinned a minor behind what DSH resolved). `.volatile()` existed in the types
+  and not in the runtime — green typecheck, `TypeError` on load.
+
 ## 0.3.0
 
 **Idle interpreters are retired, and the model is told.**

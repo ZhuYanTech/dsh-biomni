@@ -148,8 +148,15 @@ function makeCssPlugin(pluginId: string): BuildPlugin {
           cssModules: { pattern: `[hash]_[local]` },
           minify: true,
         })
+        // Sorted, because lightningcss returns this map from a Rust HashMap
+        // whose iteration order is not stable between runs. Unsorted, two
+        // builds of identical source emit different bytes — which breaks the
+        // one check that proves the bundle the shell serves is the bundle we
+        // built, and quietly makes the artifact unreproducible.
         const classMap: Record<string, string> = {}
-        for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
+        for (const [local, exp] of Object.entries(cssExports ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+          classMap[local] = exp.name
+        }
         return [
           injectTag(pluginId, fileId, code.toString()),
           `export default ${JSON.stringify(classMap)};`,

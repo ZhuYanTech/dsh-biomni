@@ -203,33 +203,45 @@ export interface BiomniSkillsService {
   registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void
 }
 
-/** The settings service face (mirror of @deepseek-ai/dsh-settings' SettingsProvider). */
+/**
+ * The settings service face — a mirror of `SettingsForms` in
+ * `@deepseek-ai/dsh-settings`, pinned by `tests/context-drift.spec.ts`.
+ *
+ * DSH 0.2 replaced the per-namespace provider. There is no `register` and no
+ * scope: a plugin's own cordis Config IS the form, `ns` is the plugin's
+ * PROFILE ENTRY ID (`cordis.patch.yml`'s `id:`, not a namespace this plugin
+ * chooses), and live values arrive as volatile references on the config object
+ * rather than through a scope read.
+ *
+ * Only what this plugin calls is declared. The drift guard asserts that the
+ * real service satisfies this face, so declaring less is safe — declaring
+ * something that no longer exists is what used to pass silently.
+ */
 export interface BiomniSettingsService {
   /**
-   * Register one namespace schema (the resolved value layers schema defaults,
-   * then the composition base, then the user document).
+   * Live form view of every profile entry, secrets redacted.
+   *
+   * This is the only source of the `revision` the optimistic-concurrency guard
+   * needs, which is why the fenced route reads through it rather than through
+   * the config references.
    */
-  register<T>(
-    ns: string,
-    schema: unknown,
-    options?: { base?: Partial<T>; applies?: 'live' | 'restart' },
-  ): {
-    get(): T
-    watch(callback: (next: T, prev: T) => void | Promise<void>): () => void
-    update(patch: object): Promise<void>
-    replace(section: object): Promise<void>
-  }
-  /** Redacted descriptors of every registered namespace (secrets stripped). */
   describe(options?: { redactSecrets?: boolean }): Array<{
     ns: string
     value?: unknown
     base?: unknown
     user?: unknown
-    applies: 'live' | 'restart'
+    applies: 'live'
     revision: number
   }>
-  /** Service-level merge write with the revision guard (a stale writer is refused). */
+  /**
+   * Merge editable fields into one entry's config.
+   *
+   * A stale `expectedRevision` is refused with `SettingsConflictError` rather
+   * than overwriting a concurrent edit — the guard `tests/api.spec.ts` pins.
+   */
   update(ns: string, patch: object, expectedRevision?: number): Promise<void>
+  /** Whether the active profile accepts writes at all (a read-only deployment). */
+  readonly writable: boolean
 }
 
 // ── Client-side services ────────────────────────────────────────────────────
@@ -275,6 +287,25 @@ export interface BiomniLocaleService {
 }
 
 declare module 'cordis' {
+  /**
+   * Host events this plugin listens for.
+   *
+   * Mirrored for the same reason the services are: DSH augments
+   * `@deepseek-ai/cordis` while this plugin's context type comes from
+   * `cordis`, so its declarations do not reach us. Pinned by
+   * `tests/context-drift.spec.ts` against the real signature.
+   */
+  interface Events {
+    /**
+     * One profile entry's form values changed (DSH 0.2; replaces the
+     * `SettingsScope.watch` callback that no longer exists).
+     *
+     * Carries only the entry id and its new revision — a listener that needs
+     * to know WHAT changed re-reads the values and compares.
+     */
+    'settings/document-updated'(ns: string, revision: number): void
+  }
+
   interface Context {
     webServer: BiomniWebServer
     webRuntime: BiomniWebRuntime

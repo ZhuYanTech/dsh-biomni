@@ -13,12 +13,12 @@ import type { BiomniConfig } from '../src/config.ts'
 import { isTrustedApiRequest } from '../src/trust-fence.ts'
 import { buildApi } from '../src/api.ts'
 import { BiomniError } from '../src/wire.ts'
-import { fakeRequest, fakeResponse, stubContext } from './stubs.ts'
+import { fakeRequest, fakeResponse, stubContext, applyWithConfig } from './stubs.ts'
 
 /** Mount the plugin and hand back the route handler plus the recorder. */
 function mount() {
   const { ctx, rec } = stubContext()
-  apply(ctx, new Config({ python: 'python3' }) as unknown as BiomniConfig)
+  applyWithConfig(ctx, new Config({ python: 'python3' }) as unknown as BiomniConfig)
   const route = rec.routes.find(candidate => candidate.path === '/biomni/api')!
   return { rec, handler: route.handler }
 }
