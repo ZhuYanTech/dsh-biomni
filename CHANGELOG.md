@@ -34,13 +34,22 @@ had been absent upstream for a month against a green build.
 `tests/context-drift.spec.ts` now asserts that the real types satisfy the
 mirrors, and was itself checked by breaking the mirror in both directions.
 
-**Three bugs the upgrade surfaced, none of them caused by it:**
+**Bugs the upgrade surfaced, none of them caused by it:**
 
-- `test/verify-bundle.sh` checked tarball contents with `tar | grep -q` under
-  `set -o pipefail`. `grep -q` exits on its first match, `tar` takes SIGPIPE,
-  and the pipeline reports failure — so the check had become a race against
-  the archive's size, passing while it was small and reporting every asset
-  missing once it grew.
+- **`test/verify-bundle.sh` had six checks that invert as they grow.** Piping
+  into `grep -q` under `set -o pipefail` reports FAILURE on a successful
+  match: `grep -q` exits the instant it matches, the writer takes SIGPIPE
+  mid-write, and pipefail surfaces that as the pipeline's status. The failure
+  appears only once the payload outgrows the pipe buffer, so each of these
+  passes for months and then starts failing on the one outcome it exists to
+  confirm. Two had already turned: the tarball listing (reporting every asset
+  missing) and step 5's composition dump (reporting the plugin row absent
+  from a composition it had merged into). The remaining four were found by
+  reading, and one of them would not have failed loudly at all — a false 141
+  on the `"biomni":null` branch makes the script announce that the probe
+  FOUND Biomni. All six now read from a here-string, which is a file rather
+  than a pipe, and the rule is written at the top of the script instead of
+  next to the one call that taught it.
 - The CSS-modules class map was built from a lightningcss export whose key
   order comes from a Rust HashMap. Two builds of identical source emitted
   different bytes, which made the artifact unreproducible and broke the one

@@ -188,10 +188,11 @@ scipy / matplotlib / scikit-learn）装载后常驻 **298 MB**，空解释器 **
 
 `test/verify-bundle.sh` 是本仓库唯一证明「绕开 allowlist 的设置方案在真实 dsh 上成立」的东西。改动 `src/api.ts`、`src/index.ts` 的路由挂载、`src/client/index.tsx` 的 slot 注册，或 `package.json` 的 `dsh` / `files` 字段之后，都要重跑它。
 
-两个反复踩到的点：
+三个反复踩到的点：
 
 - **patch 行是替换，不是合并。** 只写 `port` 会丢掉 `host`，报错是 `$.host missing required value`，看起来像插件的问题。
 - **启动检查必须要求服务真的起来。** 用 `|| true` 启动再只 grep 自己的行名，webserver 起不来也照样"通过"。
+- **不要管道进 `grep -q`。** 在 `set -o pipefail` 下，`echo "$X" | grep -q …` 会在**匹配成功**时报失败：`grep -q` 一命中就退出，上游写到一半吃 SIGPIPE，pipefail 把它当成整条管道的状态。而这只在负载长到超过管道缓冲区之后才发生——所以这种检查会先绿上几个月，然后在它唯一要确认的那个结果上开始报错。本仓库栽过两次：tarball 清单（报"每个产物都缺"）和第 5 步的 composition dump（报"插件行没并进去"，而它并进去了）。一律 `grep -q … <<<"$var"`：here-string 是文件不是管道，没有能被半路杀掉的写入方。同理 `… | head -n`，要么 `|| true`，要么先收进变量。
 
 ## 5. 守卫的两个方向都要测
 

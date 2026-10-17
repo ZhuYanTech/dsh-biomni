@@ -50,18 +50,31 @@ ok "sources present"
 step "2/8 build and pack (the published artifact, not the working tree)"
 ( cd "$ROOT" && pnpm install --silent && pnpm build >/dev/null )
 ( cd "$ROOT" && pnpm pack --pack-destination "$TMP" >/dev/null )
-TGZ="$(ls "$TMP"/*.tgz | head -1)"
+TGZ_CANDIDATES=("$TMP"/*.tgz)
+TGZ="${TGZ_CANDIDATES[0]}"
+# An unmatched glob stays literal, so say so here rather than letting `tar`
+# fail three lines down about a filename with a `*` in it.
+[ -f "$TGZ" ] || die "pnpm pack produced no tarball in $TMP"
 ok "packed $(basename "$TGZ")"
 # The host resolves these at runtime from the package root; a files[] slip
 # would only surface as a spawn failure inside a session.
 #
-# The listing is taken ONCE into a variable rather than piped per asset. Under
-# `set -o pipefail`, `tar ... | grep -q` fails whenever grep matches early
-# enough to close the pipe before tar has finished writing: tar takes SIGPIPE,
-# and pipefail reports the pipeline as failed. That turned this check into a
-# race against the tarball's size — it passed while the archive was small and
-# started reporting every asset "missing" once it grew. A check that can fail
-# for reasons unrelated to what it checks is worse than no check.
+# NOTHING IN THIS SCRIPT PIPES INTO `grep -q`, and the rule is worth stating
+# once here because breaking it is invisible. `grep -q` exits the instant it
+# matches; whatever is upstream then takes SIGPIPE mid-write, and under
+# `set -o pipefail` the pipeline reports FAILURE — on a successful match. The
+# check inverts, and it inverts only once the payload outgrows the pipe
+# buffer, so it passes for months and then starts failing on the one outcome
+# it was written to confirm.
+#
+# Both ways it has bitten this script were exactly that: `tar -tzf | grep -q`
+# here, reporting every asset missing once the tarball grew, and
+# `echo "$DUMP" | grep -q` at step 5, reporting the composition row absent
+# once the dump grew. A check that can fail for reasons unrelated to what it
+# checks is worse than no check.
+#
+# So: capture once into a variable, then `grep -q ... <<<"$var"`. A here-string
+# is a file, not a pipe — the writer has nothing to be killed mid-write.
 LISTING="$(tar -tzf "$TGZ")"
 for asset in python/worker.py python/probe.py python/skills.py python/_gates.py lib/index.js lib/client.js lib/client-registry.js; do
   grep -qxF "package/$asset" <<<"$LISTING" || die "tarball is missing $asset"
@@ -101,7 +114,7 @@ ok "dsh-biomni joined dsh.profile.bundles"
 
 step "5/8 composition (--dump-config)"
 DUMP="$(dsh --profile "$PROFILE" --dump-config 2>&1 || true)"
-echo "$DUMP" | grep -q 'dsh-biomni' || die "the dsh-biomni row did not merge into the composition"
+grep -q 'dsh-biomni' <<<"$DUMP" || die "the dsh-biomni row did not merge into the composition"
 ok "the dsh-biomni row merged"
 
 step "6/8 boot"
@@ -137,11 +150,13 @@ serving || { echo "--- boot log ---"; tail -30 "$BOOT_LOG"; die "the harness nev
 # DSH 0.2 gates the web surface behind a boot token printed on startup. A
 # browser arrives with it in the URL; so must anything checking what a browser
 # would receive, or every page reads as "not served".
-BOOT_TOKEN="$(grep -oE 'token=[A-Za-z0-9_-]+' "$BOOT_LOG" | head -1 | cut -d= -f2 || true)"
+TOKEN_HITS="$(grep -oE 'token=[A-Za-z0-9_-]+' "$BOOT_LOG" || true)"
+BOOT_TOKEN="${TOKEN_HITS%%$'\n'*}"
+BOOT_TOKEN="${BOOT_TOKEN#token=}"
 [ -n "$BOOT_TOKEN" ] && ok "captured the boot token" || echo "   · note: no boot token in the log; trying unauthenticated"
 if grep -qiE 'dsh-biomni.*(error|failed)|(error|failed).*dsh-biomni' "$BOOT_LOG"; then
   echo "--- plugin errors in the boot log ---"
-  grep -iE 'dsh-biomni' "$BOOT_LOG" | head -10
+  grep -iE 'dsh-biomni' "$BOOT_LOG" | head -10 || true
   die "the plugin logged an error during load or apply"
 fi
 ok "booted with no dsh-biomni load or apply error"
@@ -153,8 +168,8 @@ step "7/8 the seams this plugin owns"
 # allowlist, so a card built on that RPC would read nothing here.
 SETTINGS="$(curl -sf -X POST "http://127.0.0.1:$PORT/biomni/api/settings.get" \
   -H 'content-type: application/json' -d '{}' || true)"
-echo "$SETTINGS" | grep -q '"ok":true' || die "/biomni/api/settings.get did not answer: ${SETTINGS:-<no response>}"
-echo "$SETTINGS" | grep -q "$PYTHON" || die "settings.get did not resolve the configured interpreter: $SETTINGS"
+grep -q '"ok":true' <<<"$SETTINGS" || die "/biomni/api/settings.get did not answer: ${SETTINGS:-<no response>}"
+grep -qF "$PYTHON" <<<"$SETTINGS" || die "settings.get did not resolve the configured interpreter: $SETTINGS"
 ok "settings.get answers and resolves the settings document"
 
 # The trust fence: a cross-site Host header must be refused.
@@ -167,9 +182,9 @@ ok "the trust fence refuses an untrusted Host"
 # The environment probe, end to end through the route.
 PROBE="$(curl -sf -X POST "http://127.0.0.1:$PORT/biomni/api/env.probe" \
   -H 'content-type: application/json' -d '{}' --max-time 120 || true)"
-echo "$PROBE" | grep -q '"ok":true' || die "/biomni/api/env.probe did not answer: ${PROBE:-<no response>}"
+grep -q '"ok":true' <<<"$PROBE" || die "/biomni/api/env.probe did not answer: ${PROBE:-<no response>}"
 ok "env.probe answers"
-if echo "$PROBE" | grep -q '"biomni":null'; then
+if grep -q '"biomni":null' <<<"$PROBE"; then
   printf '   · note: %s has no Biomni, so the probe reports an empty inventory\n' "$PYTHON"
   printf '     (set DSH_BIOMNI_PYTHON to a Biomni venv to verify the catalog too)\n'
 else
