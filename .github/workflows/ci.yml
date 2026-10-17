@@ -70,7 +70,12 @@ jobs:
               sys.exit("image built but biomni is not importable in it")
           importable = sum(1 for m in report.get("modules", []) if m.get("importable"))
           callable_ = report["totalFunctions"] - report["blockedFunctions"]
-          print(f"biomni {report[\"biomni\"]}: {importable} modules, {callable_} functions callable")
+          # Bound first rather than indexed inside the f-string: a backslash in
+          # an f-string replacement field is a SyntaxError before Python 3.12,
+          # and this step had never once reached its own assertions because of
+          # it — the image built, the check that proves it works did not run.
+          version = report["biomni"]
+          print(f"biomni {version}: {importable} modules, {callable_} functions callable")
           if importable == 0:
               sys.exit("no tool module imports in the image")
           '
