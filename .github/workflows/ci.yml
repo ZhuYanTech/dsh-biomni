@@ -22,7 +22,14 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 10, not 9. DSH 0.2's plugin manager drives pnpm itself and writes
+          # `allowBuilds` into the profile's pnpm-workspace.yaml — a pnpm 10
+          # shape. Under 9 the same command dies with ERR_PNPM_ADDING_TO_ROOT
+          # and the plugin never joins the bundle stack, which reads as a
+          # plugin fault and is not one. Reproduced both ways locally before
+          # changing this. Upstream declares no `engines`, so nothing but this
+          # comment holds the requirement.
+          version: 10
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -92,7 +99,14 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 10, not 9. DSH 0.2's plugin manager drives pnpm itself and writes
+          # `allowBuilds` into the profile's pnpm-workspace.yaml — a pnpm 10
+          # shape. Under 9 the same command dies with ERR_PNPM_ADDING_TO_ROOT
+          # and the plugin never joins the bundle stack, which reads as a
+          # plugin fault and is not one. Reproduced both ways locally before
+          # changing this. Upstream declares no `engines`, so nothing but this
+          # comment holds the requirement.
+          version: 10
 
       # Pinned to the version this plugin's peer range names. The developer
       # preview moves fast and upstream warns of compatibility-breaking
