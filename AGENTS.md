@@ -21,16 +21,28 @@
 
 ## 2. 设置这条路，别走错
 
-三方 namespace **不能**用 DSH 的 settings RPC——`packages/host/apiproxy` 的 `WEB_SETTINGS_NAMESPACES` 是硬编码 allowlist，进不去的 namespace 一律 `status: 'unavailable'`。
+**DSH 0.2 把这条路整个换了。** 旧的写法（`settingsNamespace()` + `ctx.settings.register()` 拿 scope，
+`settings.yaml` 作为独立文档）**已经不存在**，不要照着老代码或老文档写回去。
 
-因此本插件的设置走：
+现在的模型：**插件自己的 cordis `Config` 就是设置表单**。
 
 ```
-client: ctx.slots.inject('settings.section', …)   ← 注册整个分区，不是 settings.plugin.item
+client: ctx.slots.inject('settings.section', …)   ← 仍然如此，不是 settings.plugin.item
         ↓ fetch /biomni/api/settings.get|update
-host:   ctx.settings.register(ns, PrefsSchema)     ← 进程内持有，无 allowlist
-        ctx.settings.describe() / .update(ns, patch, expectedRevision)
+host:   ctx.settings.describe()                   ← SettingsForms，全部 profile 条目
+        ctx.settings.update(ns, patch, expectedRevision)
 ```
+
+三个必须记住的点：
+
+1. **`ns` 是 profile 条目 id**（`cordis.patch.yml` 里的 `id:`），不是插件自选的 namespace。
+   代码里是 `BIOMNI_PREFS_NS`（`biomni`），两边必须对得上 —— 对不上时 `index.ts` 会**大声警告**
+   并列出实际存在的 id，不要把这个警告删成静默降级。
+2. **live 字段靠 `.volatile()` 标记**，值到手是 `Volatile<T>` 引用，`.get()` 取当前快照。
+   这就是「改了立即生效」的实现，也意味着**在 `apply` 里缓存设置已经类型不通过** ——
+   `config.python` 是引用不是字符串。非 volatile 字段改动会 remount 整个插件。
+3. **`scope.watch()` 没了**，换成 `ctx.on('settings/document-updated', (ns, revision) => …)`。
+   事件只带 id 和 revision，想知道「改了什么」要自己重读比较 —— `index.ts` 就是这么做的。
 
 改动这条链路时必须保住三件事，`tests/api.spec.ts` 钉着：
 
@@ -38,16 +50,33 @@ host:   ctx.settings.register(ns, PrefsSchema)     ← 进程内持有，无 all
 2. **revision 守卫**：`expectedRevision` 过期必须 409（`settings-conflict`），不能静默覆盖；
 3. **未知方法 404**，不能因为路由是 prefix 就把任何路径当方法。
 
-## 3. 分层：什么该是用户设置，什么不该
+### 2b. 镜像会漂，而且漂了不报错
 
-| 层 | 放什么 | 为什么 |
+`src/context-types.ts` 里的 host 服务面是**手写镜像**（client 半区不能碰 `node:*`，测试也要能脱离
+harness 跑）。代价是 `pnpm typecheck` 验的是我们的副本，不是 DSH 的真实 API ——
+**上游改了，构建照样绿，炸在运行时**。DSH 0.2 的迁移就是这么被发现的：`ctx.settings.register()`
+在上游消失了一个月，构建一次都没响过。
+
+所以有 `tests/context-drift.spec.ts`：**type-only 导入真实包，断言「真东西必须能用在我们的镜像位置上」**。
+上游加成员没事，删/改我们声明过的成员就是编译错误，当场炸在升级的那一刻。
+
+**它红的时候改镜像，永远不要改断言。** 把断言放宽来换绿灯，等于把它要终结的那个盲区又装回去。
+
+## 3. 分层：什么该 live，什么不该
+
+旧的「组合行 vs 用户设置」两层在 DSH 0.2 合并成了**一个 schema、两种生命周期**（`src/config.ts`）：
+
+| 标记 | 放什么 | 为什么 |
 |---|---|---|
-| 组合行（`Config`，`cordis.patch.yml`） | `description`、`guidance` | 文本挂在请求前缀上，会话中途改会让 KV 缓存失效 |
-| 用户设置（`PrefsSchema`，`biomni` namespace） | `python`、`timeoutMs`、`guardShellPython`、`dataPath` | 路径和限额，改了要立即生效 |
+| `.volatile()` | `python`、`timeoutMs`、`guardShellPython`、`dataPath`、`idleTimeoutMs` | 路径和限额，改了要立即生效，不能重挂 |
+| 不标记（改动会 remount） | `description`、`guidance` | 文本挂在请求前缀上，会话中途改会让 KV 缓存失效；remount 重建整个插件正是对的语义 |
 
-用户设置**必须按访问解析**（`scope.get()` 放在 getter 里），不能在 `apply` 里读一次存下来——否则「改了立即生效」就是假的。
+**给 live 字段加东西时，确认它真的该 live。** 一个本该 remount 的字段标成 volatile，改它不会重挂 ——
+看起来更顺手，实际是让一个需要重建的东西没重建。反过来，一个该 live 的字段忘了标 volatile，
+改它会**退役所有会话的解释器、丢掉命名空间** —— 用户只会说「保存了个路径，我的工作没了」。
 
-`python` 变更还要 `workers.resetAll()`：已经在跑的解释器保留它出生时的可执行文件，不退役就等于没改。
+`snapshotPrefs(config)` 一次性读全部 live 字段（给报告、给 wire 响应用）。
+**不要把它的结果跨 await 或跨调用边界持有** —— volatile 的全部含义就是那时它可能已经变了。
 
 ## 4. 所有的门都不要合并成一个数字
 
@@ -159,10 +188,11 @@ scipy / matplotlib / scikit-learn）装载后常驻 **298 MB**，空解释器 **
 
 `test/verify-bundle.sh` 是本仓库唯一证明「绕开 allowlist 的设置方案在真实 dsh 上成立」的东西。改动 `src/api.ts`、`src/index.ts` 的路由挂载、`src/client/index.tsx` 的 slot 注册，或 `package.json` 的 `dsh` / `files` 字段之后，都要重跑它。
 
-两个反复踩到的点：
+三个反复踩到的点：
 
 - **patch 行是替换，不是合并。** 只写 `port` 会丢掉 `host`，报错是 `$.host missing required value`，看起来像插件的问题。
 - **启动检查必须要求服务真的起来。** 用 `|| true` 启动再只 grep 自己的行名，webserver 起不来也照样"通过"。
+- **不要管道进 `grep -q`。** 在 `set -o pipefail` 下，`echo "$X" | grep -q …` 会在**匹配成功**时报失败：`grep -q` 一命中就退出，上游写到一半吃 SIGPIPE，pipefail 把它当成整条管道的状态。而这只在负载长到超过管道缓冲区之后才发生——所以这种检查会先绿上几个月，然后在它唯一要确认的那个结果上开始报错。本仓库栽过两次：tarball 清单（报"每个产物都缺"）和第 5 步的 composition dump（报"插件行没并进去"，而它并进去了）。一律 `grep -q … <<<"$var"`：here-string 是文件不是管道，没有能被半路杀掉的写入方。同理 `… | head -n`，要么 `|| true`，要么先收进变量。
 
 ## 5. 守卫的两个方向都要测
 
@@ -197,6 +227,7 @@ scipy / matplotlib / scikit-learn）装载后常驻 **298 MB**，空解释器 **
 | `skills.spec.ts` | 目录筛选、body 渲染、provider 缓存与失效、降级 | — |
 | `prefs.spec.ts` | 客户端逐字段回退与钳制 | — |
 | `api.spec.ts` | 信任围栏、revision 守卫、错误映射 | — |
+| `context-drift.spec.ts` | **镜像是否还描述着装着的那个 DSH**（见 2b） | — |
 | `bundle.spec.ts` | 两条通道的产物形状、manifest 一致性 | `pnpm build` |
 | `biomni.spec.ts` | 真实 Biomni 解释器；**探针与 skill 目录的一致性** | `DSH_BIOMNI_PYTHON` |
 

@@ -22,7 +22,14 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 10, not 9. DSH 0.2's plugin manager drives pnpm itself and writes
+          # `allowBuilds` into the profile's pnpm-workspace.yaml — a pnpm 10
+          # shape. Under 9 the same command dies with ERR_PNPM_ADDING_TO_ROOT
+          # and the plugin never joins the bundle stack, which reads as a
+          # plugin fault and is not one. Reproduced both ways locally before
+          # changing this. Upstream declares no `engines`, so nothing but this
+          # comment holds the requirement.
+          version: 10
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -70,7 +77,12 @@ jobs:
               sys.exit("image built but biomni is not importable in it")
           importable = sum(1 for m in report.get("modules", []) if m.get("importable"))
           callable_ = report["totalFunctions"] - report["blockedFunctions"]
-          print(f"biomni {report[\"biomni\"]}: {importable} modules, {callable_} functions callable")
+          # Bound first rather than indexed inside the f-string: a backslash in
+          # an f-string replacement field is a SyntaxError before Python 3.12,
+          # and this step had never once reached its own assertions because of
+          # it — the image built, the check that proves it works did not run.
+          version = report["biomni"]
+          print(f"biomni {version}: {importable} modules, {callable_} functions callable")
           if importable == 0:
               sys.exit("no tool module imports in the image")
           '
@@ -87,13 +99,20 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 10, not 9. DSH 0.2's plugin manager drives pnpm itself and writes
+          # `allowBuilds` into the profile's pnpm-workspace.yaml — a pnpm 10
+          # shape. Under 9 the same command dies with ERR_PNPM_ADDING_TO_ROOT
+          # and the plugin never joins the bundle stack, which reads as a
+          # plugin fault and is not one. Reproduced both ways locally before
+          # changing this. Upstream declares no `engines`, so nothing but this
+          # comment holds the requirement.
+          version: 10
 
       # Pinned to the version this plugin's peer range names. The developer
       # preview moves fast and upstream warns of compatibility-breaking
       # changes, so an unpinned CLI would make this job's failures ambiguous.
       - name: install the dsh CLI
-        run: npm i -g @deepseek-ai/dsh@0.1.0-rc.6
+        run: npm i -g @deepseek-ai/dsh@0.2.0-rc.2
 
       - run: pnpm install --frozen-lockfile
 

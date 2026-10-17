@@ -22,7 +22,7 @@ import {
   readCatalog,
 } from '../src/skills/catalog.ts'
 import { renderDataLakeBody, renderSkillBody, renderSoftwareBody } from '../src/skills/render.ts'
-import { stubContext, stubOwner } from './stubs.ts'
+import { stubContext, stubOwner, applyWithConfig } from './stubs.ts'
 
 const PYTHON = process.env.DSH_BIOMNI_PYTHON
 
@@ -40,7 +40,7 @@ function hasBiomni(): boolean {
 const available = hasBiomni()
 
 const { ctx, rec } = stubContext()
-if (available) apply(ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
+if (available) applyWithConfig(ctx, new Config({ python: PYTHON }) as unknown as BiomniConfig)
 
 afterAll(async () => {
   await Promise.all(rec.disposers.map(dispose => dispose()))

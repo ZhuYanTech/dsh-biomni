@@ -50,12 +50,34 @@ ok "sources present"
 step "2/8 build and pack (the published artifact, not the working tree)"
 ( cd "$ROOT" && pnpm install --silent && pnpm build >/dev/null )
 ( cd "$ROOT" && pnpm pack --pack-destination "$TMP" >/dev/null )
-TGZ="$(ls "$TMP"/*.tgz | head -1)"
+TGZ_CANDIDATES=("$TMP"/*.tgz)
+TGZ="${TGZ_CANDIDATES[0]}"
+# An unmatched glob stays literal, so say so here rather than letting `tar`
+# fail three lines down about a filename with a `*` in it.
+[ -f "$TGZ" ] || die "pnpm pack produced no tarball in $TMP"
 ok "packed $(basename "$TGZ")"
 # The host resolves these at runtime from the package root; a files[] slip
 # would only surface as a spawn failure inside a session.
+#
+# NOTHING IN THIS SCRIPT PIPES INTO `grep -q`, and the rule is worth stating
+# once here because breaking it is invisible. `grep -q` exits the instant it
+# matches; whatever is upstream then takes SIGPIPE mid-write, and under
+# `set -o pipefail` the pipeline reports FAILURE — on a successful match. The
+# check inverts, and it inverts only once the payload outgrows the pipe
+# buffer, so it passes for months and then starts failing on the one outcome
+# it was written to confirm.
+#
+# Both ways it has bitten this script were exactly that: `tar -tzf | grep -q`
+# here, reporting every asset missing once the tarball grew, and
+# `echo "$DUMP" | grep -q` at step 5, reporting the composition row absent
+# once the dump grew. A check that can fail for reasons unrelated to what it
+# checks is worse than no check.
+#
+# So: capture once into a variable, then `grep -q ... <<<"$var"`. A here-string
+# is a file, not a pipe — the writer has nothing to be killed mid-write.
+LISTING="$(tar -tzf "$TGZ")"
 for asset in python/worker.py python/probe.py python/skills.py python/_gates.py lib/index.js lib/client.js lib/client-registry.js; do
-  tar -tzf "$TGZ" | grep -q "^package/$asset$" || die "tarball is missing $asset"
+  grep -qxF "package/$asset" <<<"$LISTING" || die "tarball is missing $asset"
 done
 ok "runtime assets ship in the tarball"
 
@@ -92,12 +114,17 @@ ok "dsh-biomni joined dsh.profile.bundles"
 
 step "5/8 composition (--dump-config)"
 DUMP="$(dsh --profile "$PROFILE" --dump-config 2>&1 || true)"
-echo "$DUMP" | grep -q 'dsh-biomni' || die "the dsh-biomni row did not merge into the composition"
+grep -q 'dsh-biomni' <<<"$DUMP" || die "the dsh-biomni row did not merge into the composition"
 ok "the dsh-biomni row merged"
 
 step "6/8 boot"
-# Point the interpreter at whatever the caller configured, through the same
-# settings document a user would edit.
+# Point the interpreter at whatever the caller configured.
+#
+# DSH 0.2 REMOVED `settings.yaml`: a plugin's own Config is the settings form
+# now, and the Loader migrates a leftover document into the active profile on
+# first boot. Writing one here therefore still works, and exercising that
+# migration is worth keeping — it is the path every existing install takes on
+# upgrade. A fresh deployment should set `python` on the profile row instead.
 mkdir -p "$DSH_HOME"
 cat > "$DSH_HOME/settings.yaml" <<EOF
 biomni:
@@ -109,15 +136,27 @@ BOOT_PID=$!
 # shellcheck disable=SC2064
 trap "kill $BOOT_PID 2>/dev/null || true; rm -rf '$TMP'" EXIT
 
+# Readiness is "the port is speaking HTTP", not "/ returns 2xx". DSH 0.2 gates
+# the web root behind the boot token, so `curl -f` on a bare "/" now reports
+# the harness as never having started while it is in fact serving — a check
+# that fails for a reason unrelated to what it checks.
+serving() { [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/")" != "000" ]; }
 for _ in $(seq 1 60); do
-  curl -sf -o /dev/null "http://127.0.0.1:$PORT/" && break
+  serving && break
   kill -0 "$BOOT_PID" 2>/dev/null || { echo "--- boot log ---"; tail -30 "$BOOT_LOG"; die "the harness exited during boot"; }
   sleep 1
 done
-curl -sf -o /dev/null "http://127.0.0.1:$PORT/" || { echo "--- boot log ---"; tail -30 "$BOOT_LOG"; die "the harness never served on port $PORT"; }
+serving || { echo "--- boot log ---"; tail -30 "$BOOT_LOG"; die "the harness never served on port $PORT"; }
+# DSH 0.2 gates the web surface behind a boot token printed on startup. A
+# browser arrives with it in the URL; so must anything checking what a browser
+# would receive, or every page reads as "not served".
+TOKEN_HITS="$(grep -oE 'token=[A-Za-z0-9_-]+' "$BOOT_LOG" || true)"
+BOOT_TOKEN="${TOKEN_HITS%%$'\n'*}"
+BOOT_TOKEN="${BOOT_TOKEN#token=}"
+[ -n "$BOOT_TOKEN" ] && ok "captured the boot token" || echo "   · note: no boot token in the log; trying unauthenticated"
 if grep -qiE 'dsh-biomni.*(error|failed)|(error|failed).*dsh-biomni' "$BOOT_LOG"; then
   echo "--- plugin errors in the boot log ---"
-  grep -iE 'dsh-biomni' "$BOOT_LOG" | head -10
+  grep -iE 'dsh-biomni' "$BOOT_LOG" | head -10 || true
   die "the plugin logged an error during load or apply"
 fi
 ok "booted with no dsh-biomni load or apply error"
@@ -129,8 +168,8 @@ step "7/8 the seams this plugin owns"
 # allowlist, so a card built on that RPC would read nothing here.
 SETTINGS="$(curl -sf -X POST "http://127.0.0.1:$PORT/biomni/api/settings.get" \
   -H 'content-type: application/json' -d '{}' || true)"
-echo "$SETTINGS" | grep -q '"ok":true' || die "/biomni/api/settings.get did not answer: ${SETTINGS:-<no response>}"
-echo "$SETTINGS" | grep -q "$PYTHON" || die "settings.get did not resolve the configured interpreter: $SETTINGS"
+grep -q '"ok":true' <<<"$SETTINGS" || die "/biomni/api/settings.get did not answer: ${SETTINGS:-<no response>}"
+grep -qF "$PYTHON" <<<"$SETTINGS" || die "settings.get did not resolve the configured interpreter: $SETTINGS"
 ok "settings.get answers and resolves the settings document"
 
 # The trust fence: a cross-site Host header must be refused.
@@ -143,9 +182,9 @@ ok "the trust fence refuses an untrusted Host"
 # The environment probe, end to end through the route.
 PROBE="$(curl -sf -X POST "http://127.0.0.1:$PORT/biomni/api/env.probe" \
   -H 'content-type: application/json' -d '{}' --max-time 120 || true)"
-echo "$PROBE" | grep -q '"ok":true' || die "/biomni/api/env.probe did not answer: ${PROBE:-<no response>}"
+grep -q '"ok":true' <<<"$PROBE" || die "/biomni/api/env.probe did not answer: ${PROBE:-<no response>}"
 ok "env.probe answers"
-if echo "$PROBE" | grep -q '"biomni":null'; then
+if grep -q '"biomni":null' <<<"$PROBE"; then
   printf '   · note: %s has no Biomni, so the probe reports an empty inventory\n' "$PYTHON"
   printf '     (set DSH_BIOMNI_PYTHON to a Biomni venv to verify the catalog too)\n'
 else
@@ -153,17 +192,35 @@ else
 fi
 
 step "8/8 the browser half"
-# The shell's boot manifest lists every plugin client bundle it will load. A
-# bundle whose registered id does not match its channel simply never
-# activates, with no error anywhere — so the id is checked against the served
-# artifact, not just against the file on disk.
-curl -sf "http://127.0.0.1:$PORT/client-modules" -o "$TMP/client-modules.html" \
-  || die "the shell did not serve its boot manifest"
-python3 - "$TMP/client-modules.html" "$TMP/entry.json" <<'PY'
-import json, sys
+# A bundle whose registered id does not match its channel simply never
+# activates, with no error anywhere — so the id is checked against what the
+# SHELL ACTUALLY SERVES, not against the file on disk.
+#
+# How that is fetched changed in DSH 0.2, twice over:
+#   - the boot manifest is no longer its own `/client-modules` page; it is
+#     injected into the shell index (the `webserver/index-inject` event), and
+#   - the web surface authenticates by exchanging `?token=` for a session
+#     cookie on a 303, so a cookie jar is required or every page reads 401.
+# Missing either made this step report "not served" for a shell that was
+# serving perfectly well.
+JAR="$TMP/cookies"
+curl -sL -c "$JAR" -b "$JAR" "http://127.0.0.1:$PORT/?token=$BOOT_TOKEN" -o "$TMP/index.html" \
+  || die "the shell did not serve its index page"
+[ -s "$TMP/index.html" ] || die "the shell index came back empty (token exchange failed?)"
+
+python3 - "$TMP/index.html" "$TMP/entry.json" <<'BOOTPARSE'
+import json, re, sys
 html = open(sys.argv[1]).read()
-marker = 'window.__DSH_BOOT__ = '
-start = html.index(marker) + len(marker)
+# Keyed on the NAME, not on how it is assigned: DSH 0.1 wrote
+# `window.__DSH_BOOT__ = {...}` and 0.2 writes `globalThis["__DSH_BOOT__"] = {...}`.
+# The global's name is the stable contract; its spelling is not.
+m = re.search(r'__DSH_BOOT__"?\]?\s*=\s*', html)
+if m is None:
+    raise SystemExit(
+        f'the shell index carries no __DSH_BOOT__ ({len(html)} bytes served) '
+        '— the boot-manifest injection moved again'
+    )
+start = m.end()
 depth = 0
 for end in range(start, len(html)):
     if html[end] == '{':
@@ -173,19 +230,49 @@ for end in range(start, len(html)):
         if depth == 0:
             break
 boot = json.loads(html[start:end + 1])
-hit = [entry for entry in boot['entries'] if entry['id'] == 'dsh-biomni']
+hit = [e for e in boot['entries'] if e['id'] == 'dsh-biomni']
 assert hit, f"dsh-biomni is not in the shell's boot manifest ({len(boot['entries'])} entries)"
 json.dump(hit[0], open(sys.argv[2], 'w'))
-PY
+BOOTPARSE
 ok "the shell will load the dsh-biomni client bundle"
 
 BUNDLE_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$TMP/entry.json")"
-curl -sf "http://127.0.0.1:$PORT$BUNDLE_URL" -o "$TMP/served-client.js" \
-  || die "the client bundle URL from the manifest does not serve"
-cmp -s "$TMP/served-client.js" "$ROOT/lib/client.js" \
-  || die "the served bundle differs from the built lib/client.js"
+# 0.2 reports a RELATIVE url using the combo syntax
+# ("plugins/??<id>/client.js&rev=<rev>"); 0.1 reported an absolute path.
+case "$BUNDLE_URL" in /*) BUNDLE_PATH="$BUNDLE_URL" ;; *) BUNDLE_PATH="/$BUNDLE_URL" ;; esac
+curl -sfL -c "$JAR" -b "$JAR" "http://127.0.0.1:$PORT$BUNDLE_PATH" -o "$TMP/served-client.js" \
+  || die "the client bundle URL from the manifest does not serve: $BUNDLE_URL"
+python3 - "$ROOT/lib/client.js" "$TMP/served-client.js" <<'SAMEBUNDLE'
+"""Is the bundle the shell served the one we built?
+
+Not byte-identity any more: DSH 0.2 serves client bundles through a combo
+endpoint (`/plugins/??<id>/client.js&rev=<rev>`) which appends a `;` module
+separator and rewrites the trailing sourceMappingURL to its own combo path.
+Everything else must still match exactly — the point of this check is to catch
+a STALE OR WRONG ARTIFACT being served under our id, and normalising only the
+two bytes the endpoint is known to rewrite keeps that intact.
+"""
+import re, sys
+
+# The combo endpoint appends its own `;` module separator on a line of its
+# own, in addition to the one the bundle already ends with, and rewrites the
+# sourcemap path to the combo URL. Both are stripped; nothing else is.
+TRAILER = re.compile(r'[;\s]*//# sourceMappingURL=\S*\s*$')
+
+def normalise(path):
+    return TRAILER.sub('', open(path, encoding='utf8').read()).rstrip('; \t\r\n')
+
+built, served = normalise(sys.argv[1]), normalise(sys.argv[2])
+if built == served:
+    raise SystemExit(0)
+raise SystemExit(
+    f'the served bundle differs from the built lib/client.js beyond the combo '
+    f'endpoint\'s sourcemap rewrite (built {len(built)} chars, served {len(served)})'
+)
+SAMEBUNDLE
+
 grep -q 'settings.section' "$TMP/served-client.js" || die "the served bundle registers no settings section"
-ok "the served bundle is byte-identical to lib/client.js and registers a settings section"
+ok "the served bundle is the one we built, and registers a settings section"
 
 printf '\n✔ all checks passed. Isolated environment removed.\n'
 printf '\nStill unverified without a browser: how the Settings section RENDERS,\n'

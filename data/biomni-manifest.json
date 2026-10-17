@@ -1,8 +1,8 @@
 {
-  "_comment": "Captured from Biomni's env_desc by scripts/vendor-manifest.py. Data, not code — it lets the data lake and software catalogs work without a Biomni install. A live Biomni always takes precedence.",
+  "_comment": "Captured from Biomni's env_desc by scripts/vendor-manifest.py, and modified: reshaped into this structure and annotated with dataset sizes. Data, not code — it lets the data lake and software catalogs work without a Biomni install. A live Biomni always takes precedence.",
   "biomni": "0.0.8",
   "source": "biomni/env_desc.py + env_desc_cm.py",
-  "license": "MIT (Biomni, snap-stanford). Individual datasets carry their own terms.",
+  "license": "Apache-2.0 (Biomni, snap-stanford). Individual datasets carry their own terms.",
   "bucket": "https://biomni-release.s3.amazonaws.com/data_lake/",
   "datasets": {
     "BindingDB_All_202409.tsv": {

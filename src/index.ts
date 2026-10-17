@@ -22,9 +22,8 @@
  * ordinary out-of-tree bundle.
  */
 import { join } from 'node:path'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { BiomniHttpResponse, Context } from './context-types.ts'
-import { BIOMNI_PREFS_NS, Config, PrefsSchema, prefsBaseOf, type BiomniConfig } from './config.ts'
+import { BIOMNI_PREFS_NS, Config, PrefsSchema, snapshotPrefs, type BiomniConfig } from './config.ts'
 import type { BiomniPrefs } from './prefs-shared.ts'
 import { buildApi, type BiomniSettingsFace } from './api.ts'
 import { shellPythonGuard } from './guard.ts'
@@ -85,26 +84,52 @@ const ARTIFACT_DOWNLOAD = 'artifacts.get'
 
 export function apply(ctx: Context, config: BiomniConfig): void {
   // ── Settings ─────────────────────────────────────────────────────────────
-  // The composition row is the deployment's base; a user's settings document
-  // layers over it. Reading through the scope on every access is what lets an
-  // edit take effect without a restart.
-  const ns = settingsNamespace(BIOMNI_PREFS_NS)
-  const scope = ctx.settings.register<BiomniPrefs>(ns, PrefsSchema, { base: prefsBaseOf(config) })
-
-  /** The live resolved prefs, re-read per property access. */
+  // DSH 0.2: there is no namespace to register. This plugin's own Config IS
+  // the Settings form, its live fields arrive as volatile references, and the
+  // "namespace" a write addresses is the PROFILE ENTRY ID from
+  // cordis.patch.yml.
+  //
+  // The facade below exists so nothing downstream had to change: every reader
+  // still sees a plain `BiomniPrefs`, and still re-reads per property access.
+  // That rule did not get easier to break — `config.python` is a reference, so
+  // caching it at apply time no longer type-checks as a string.
   const live: BiomniPrefs = {
-    get python() { return scope.get().python },
-    get timeoutMs() { return scope.get().timeoutMs },
-    get guardShellPython() { return scope.get().guardShellPython },
-    get dataPath() { return scope.get().dataPath },
-    get idleTimeoutMs() { return scope.get().idleTimeoutMs },
+    get python() { return config.python.get() },
+    get timeoutMs() { return config.timeoutMs.get() },
+    get guardShellPython() { return config.guardShellPython.get() },
+    get dataPath() { return config.dataPath.get() },
+    get idleTimeoutMs() { return config.idleTimeoutMs.get() },
+  }
+
+  // Which profile entry is us. `describe()` returns every entry in the
+  // profile, keyed by the id its row was given, and nothing hands a plugin its
+  // own id — so this is a convention between the code and cordis.patch.yml.
+  //
+  // A convention that can silently not hold is exactly the failure this plugin
+  // exists to prevent, so a mismatch is LOUD rather than a panel that quietly
+  // cannot save: an operator who renamed the row gets told which id was
+  // looked for and which ones exist.
+  const ns = BIOMNI_PREFS_NS
+  let warnedMissing = false
+  const descriptorOf = (): { value?: unknown; revision?: number } | undefined => {
+    const entries = ctx.settings.describe({ redactSecrets: true })
+    const mine = entries.find(candidate => candidate.ns === ns)
+    if (mine === undefined && !warnedMissing) {
+      warnedMissing = true
+      ctx.logger.warn(
+        `no profile entry with id "${ns}"; the Settings panel cannot save. `
+        + `Entries present: ${entries.map(e => e.ns).join(', ') || '(none)'}. `
+        + `Set \`id: ${ns}\` on this plugin's row in the profile.`,
+      )
+    }
+    return mine
   }
 
   // The in-process face the fenced routes call. `describe()` is the seam's own
   // read; no allowlist applies to it in-process (see api.ts for why that
   // matters).
   const settingsView = (): { value?: unknown; revision?: number } => {
-    const descriptor = ctx.settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === ns)
+    const descriptor = descriptorOf()
     return descriptor === undefined
       ? { value: undefined, revision: undefined }
       : { value: descriptor.value, revision: descriptor.revision }
@@ -131,17 +156,25 @@ export function apply(ctx: Context, config: BiomniConfig): void {
   const onCatalogChanged = new Set<() => void>()
   let currentPython = live.python
   let currentDataPath = live.dataPath
-  scope.watch((next) => {
-    const pythonChanged = next.python !== currentPython
-    const dataPathChanged = next.dataPath !== currentDataPath
+
+  // DSH 0.2 replaced `scope.watch()` with an event on the profile entry. The
+  // event carries only the id and a revision, so the comparison against the
+  // last-seen values stays here — which is what we want anyway: the two
+  // settings have different blast radii and only an edge triggers either.
+  ctx.effect(() => ctx.on('settings/document-updated', (changed) => {
+    if (changed !== ns) return
+    const nextPython = live.python
+    const nextDataPath = live.dataPath
+    const pythonChanged = nextPython !== currentPython
+    const dataPathChanged = nextDataPath !== currentDataPath
     if (!pythonChanged && !dataPathChanged) return
-    currentPython = next.python
-    currentDataPath = next.dataPath
+    currentPython = nextPython
+    currentDataPath = nextDataPath
     // Tagged, so the next call in each session explains its empty namespace
     // rather than leaving the model to discover it as a NameError.
     if (pythonChanged) void workers.resetAll('settings')
     for (const react of onCatalogChanged) react()
-  })
+  }))
 
   // ── Model-facing surfaces ────────────────────────────────────────────────
   // 100-199 is the convention for tool guidance, after the deployment persona.
